@@ -1,8 +1,8 @@
 [general]
-name=GeoFASU (Modified)
+name=GeoFASU
 qgisMinimumVersion=3.36
 supportsQt6=True
-description="Seamlessly convert SSU samples to GeoPackages, auto-generate QField projects"
+description="Modified for field data collection"
 version=1.0.1
 
 # tags are comma separated with spaces allowed

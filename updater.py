@@ -13,7 +13,7 @@ from qgis.PyQt.QtWidgets import QMessageBox, QProgressDialog
 from qgis.PyQt.QtCore import Qt, QCoreApplication
 
 # Set your GitHub repository here ("owner/repository")
-GITHUB_REPO = "your-username/GeoFASU"
+GITHUB_REPO = "Syano18/GeoFASU_Mod"
 
 
 def get_metadata_info():
