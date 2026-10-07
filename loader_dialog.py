@@ -457,6 +457,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
             temp_project.setFileName(str(target_dir / f"{inner_folder_name}.qgz"))
 
             ref_extent = None
+            ref_layer_obj = None
             if psu_filter:
                 root = temp_project.layerTreeRoot()
                 # Filter Reference Layer
@@ -468,6 +469,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
                             ref_layer.setSubsetString(f"\"PSU_Name\" = '{psu_filter}'")
                             ref_layer.updateExtents()
                             ref_extent = ref_layer.extent()
+                            ref_layer_obj = ref_layer
                             
                             try:
                                 from qgis.core import QgsRectangle, QgsReferencedRectangle
@@ -487,78 +489,177 @@ class LoaderDialog(QDialog, FORM_CLASS):
                         if child.name() == sample_layer_name and child.layer():
                             child.layer().setSubsetString(f"\"PSU_Name\" = '{psu_filter}'")
                             break
-                # Filter Base Layer (Retain Poblacion / Pob. parentheses for accurate matching)
+                # Filter Base Layer to exact barangay boundary
                 import re
-                base_filter = re.split(r'\s*-\s*EA\s*', psu_filter, flags=re.IGNORECASE)[0].strip()
-                
-                parts = re.split(r'\s*\+\s*|\s*/\s*|\s*&\s*|\s+and\s+', base_filter, flags=re.IGNORECASE)
-                parts = [p.strip() for p in parts if p.strip()]
-                
                 base_group = root.findGroup("Base Layer")
                 base_layer_for_mask = None
+                matching_features = []
+                
                 if base_group:
                     for child in base_group.children():
                         if isinstance(child, QgsLayerTreeLayer) and child.layer():
                             base_layer_for_mask = child.layer()
-                            field_names = [f.name() for f in base_layer_for_mask.fields()]
-                            target_field = "name"
-                            for cand in ["name", "NAME", "Bgy_Name", "bgy_name", "BARANGAY", "Barangay", "BGY_NAME"]:
-                                if cand in field_names:
-                                    target_field = cand
-                                    break
-
-                            clean_parts = [p.replace("'", "''") for p in parts]
-                            if len(clean_parts) == 1:
-                                sql_filter = f"\"{target_field}\" = '{clean_parts[0]}'"
-                            else:
-                                names_str = ", ".join(f"'{p}'" for p in clean_parts)
-                                sql_filter = f"\"{target_field}\" IN ({names_str})"
-                                
-                            base_layer_for_mask.setSubsetString(sql_filter)
                             break
 
-                # Clip Basemap to .mbtiles container with Multi-Zoom Pyramids
+                if base_layer_for_mask and base_layer_for_mask.isValid():
+                    from qgis.core import (
+                        QgsCoordinateTransform,
+                        QgsGeometry
+                    )
+                    
+                    # 1. Collect reference geometries for spatial intersection
+                    ref_geoms = []
+                    if ref_layer_obj and ref_layer_obj.isValid():
+                        xform = None
+                        if ref_layer_obj.crs() != base_layer_for_mask.crs() and ref_layer_obj.crs().isValid() and base_layer_for_mask.crs().isValid():
+                            xform = QgsCoordinateTransform(ref_layer_obj.crs(), base_layer_for_mask.crs(), temp_project.transformContext())
+                        for f in ref_layer_obj.getFeatures():
+                            g = f.geometry()
+                            if g and not g.isEmpty():
+                                g_copy = QgsGeometry(g)
+                                if xform:
+                                    g_copy.transform(xform)
+                                ref_geoms.append(g_copy)
+
+                    # Check spatial intersection
+                    if ref_geoms:
+                        combined_ref = QgsGeometry.unaryUnion(ref_geoms) if len(ref_geoms) > 1 else ref_geoms[0]
+                        for feat in base_layer_for_mask.getFeatures():
+                            geom = feat.geometry()
+                            if geom and not geom.isEmpty() and geom.intersects(combined_ref):
+                                matching_features.append(feat)
+
+                    # 2. Fallback to robust name matching if spatial matching found nothing
+                    if not matching_features:
+                        field_names = [f.name() for f in base_layer_for_mask.fields()]
+                        target_field = "name"
+                        for cand in ["name", "NAME", "Bgy_Name", "bgy_name", "BARANGAY", "Barangay", "BGY_NAME", "BRGY_NAME", "brgy_name", "BG_NAME"]:
+                            if cand in field_names:
+                                target_field = cand
+                                break
+
+                        # Clean psu_filter to candidate barangay names
+                        base_filter = re.split(r'\s*-\s*EA\b', psu_filter, flags=re.IGNORECASE)[0].strip()
+                        # Remove leading code e.g. "001 - " or "PSU 1 - "
+                        base_filter_clean = re.sub(r'^\s*(\d+|PSU\s*\d*)\s*[-_:]\s*', '', base_filter, flags=re.IGNORECASE).strip()
+                        
+                        parts = re.split(r'\s*\+\s*|\s*/\s*|\s*&\s*|\s+and\s+', base_filter_clean, flags=re.IGNORECASE)
+                        parts = [p.strip().upper() for p in parts if p.strip()]
+
+                        for feat in base_layer_for_mask.getFeatures():
+                            val = feat[target_field]
+                            if val:
+                                val_norm = str(val).strip().upper()
+                                for p in parts:
+                                    if p == val_norm or p in val_norm or val_norm in p:
+                                        matching_features.append(feat)
+                                        break
+
+                    # Apply subset filter on Base Layer so only matched barangay is shown
+                    if matching_features:
+                        field_names = [f.name() for f in base_layer_for_mask.fields()]
+                        target_field = "name"
+                        for cand in ["name", "NAME", "Bgy_Name", "bgy_name", "BARANGAY", "Barangay", "BGY_NAME", "BRGY_NAME", "brgy_name", "BG_NAME"]:
+                            if cand in field_names:
+                                target_field = cand
+                                break
+                        
+                        # Match by primary key (fid) or attribute
+                        if "fid" in field_names:
+                            fid_list = [str(f.id()) for f in matching_features]
+                            base_layer_for_mask.setSubsetString(f"\"fid\" IN ({', '.join(fid_list)})")
+                        else:
+                            name_vals = [f"'{str(f[target_field]).replace('\'', '\'\'')}'" for f in matching_features if f[target_field]]
+                            if name_vals:
+                                base_layer_for_mask.setSubsetString(f"\"{target_field}\" IN ({', '.join(set(name_vals))})")
+
+                # Clip Basemap to exact Barangay boundary container
                 basemap_group = root.findGroup("Basemap")
-                if basemap_group and base_layer_for_mask:
+                if basemap_group and matching_features:
                     for child in basemap_group.children():
                         if isinstance(child, QgsLayerTreeLayer) and child.layer():
                             set_prog(20)
                             raster_layer = child.layer()
                             import processing
                             import tempfile
-                            from qgis.core import QgsFeatureRequest, QgsRasterLayer
+                            import uuid
+                            from qgis.core import (
+                                QgsVectorLayer,
+                                QgsFeature,
+                                QgsGeometry,
+                                QgsRasterLayer,
+                                QgsCoordinateTransform
+                            )
                             
-                            mask_memory_layer = base_layer_for_mask.materialize(QgsFeatureRequest())
-                            temp_raster_path = os.path.join(tempfile.gettempdir(), f"{raster_layer.name()}.mbtiles")
-                            params = {
-                                'INPUT': raster_layer,
-                                'MASK': mask_memory_layer,
-                                'CROP_TO_CROP_EXT': True,
-                                'ALPHA_BAND': True,
-                                'OPTIONS': 'TILE_FORMAT=PNG_JPEG',
-                                'OUTPUT': temp_raster_path
-                            }
-                            try:
-                                res = processing.run("gdal:cliprasterbymasklayer", params)
-                                if res and res.get('OUTPUT'):
-                                    clipped_path = res['OUTPUT']
-                                    
+                            # Build memory mask layer matching raster CRS for exact clipping
+                            raster_crs = raster_layer.crs()
+                            base_crs = base_layer_for_mask.crs()
+                            xform = None
+                            if raster_crs.isValid() and base_crs.isValid() and raster_crs != base_crs:
+                                xform = QgsCoordinateTransform(base_crs, raster_crs, temp_project.transformContext())
+
+                            crs_auth = raster_crs.authid() if raster_crs.isValid() else base_crs.authid()
+                            mask_memory_layer = QgsVectorLayer(f"Polygon?crs={crs_auth}", "barangay_mask", "memory")
+                            dp = mask_memory_layer.dataProvider()
+                            
+                            mask_feats = []
+                            for feat in matching_features:
+                                geom = feat.geometry()
+                                if geom and not geom.isEmpty():
+                                    g_copy = QgsGeometry(geom)
+                                    if xform:
+                                        g_copy.transform(xform)
+                                    f_new = QgsFeature()
+                                    f_new.setGeometry(g_copy)
+                                    mask_feats.append(f_new)
+                            
+                            if mask_feats:
+                                dp.addFeatures(mask_feats)
+                                mask_memory_layer.updateExtents()
+
+                                temp_raster_path = os.path.join(
+                                    tempfile.gettempdir(),
+                                    f"{raster_layer.name()}_{inner_folder_name}_{uuid.uuid4().hex[:6]}.mbtiles"
+                                )
+                                if os.path.exists(temp_raster_path):
                                     try:
-                                        from osgeo import gdal
-                                        ds = gdal.Open(clipped_path, gdal.GA_Update)
-                                        if ds:
-                                            ds.BuildOverviews("NEAREST", [2, 4, 8, 16, 32, 64])
-                                            ds = None
-                                    except Exception as e:
-                                        print(f"GDAL overviews failed: {e}")
+                                        os.remove(temp_raster_path)
+                                    except Exception:
+                                        pass
+
+                                params = {
+                                    'INPUT': raster_layer,
+                                    'MASK': mask_memory_layer,
+                                    'SOURCE_CRS': raster_crs if raster_crs.isValid() else None,
+                                    'TARGET_CRS': raster_crs if raster_crs.isValid() else None,
+                                    'NODATA': None,
+                                    'ALPHA_BAND': True,
+                                    'CROP_TO_CUTLINE': True,
+                                    'KEEP_RESOLUTION': True,
+                                    'OPTIONS': 'TILE_FORMAT=PNG_JPEG',
+                                    'OUTPUT': temp_raster_path
+                                }
+                                try:
+                                    res = processing.run("gdal:cliprasterbymasklayer", params)
+                                    if res and res.get('OUTPUT') and os.path.exists(res['OUTPUT']):
+                                        clipped_path = res['OUTPUT']
                                         
-                                    new_raster = QgsRasterLayer(clipped_path, raster_layer.name(), "gdal")
-                                    if new_raster.isValid():
-                                        temp_project.addMapLayer(new_raster, False)
-                                        basemap_group.insertLayer(0, new_raster)
-                                        temp_project.removeMapLayer(raster_layer.id())
-                            except Exception as e:
-                                print(f"Clip failed: {e}")
+                                        try:
+                                            from osgeo import gdal
+                                            ds = gdal.Open(clipped_path, gdal.GA_Update)
+                                            if ds:
+                                                ds.BuildOverviews("NEAREST", [2, 4, 8, 16, 32, 64])
+                                                ds = None
+                                        except Exception as e:
+                                            print(f"GDAL overviews failed: {e}")
+                                            
+                                        new_raster = QgsRasterLayer(clipped_path, raster_layer.name(), "gdal")
+                                        if new_raster.isValid():
+                                            temp_project.addMapLayer(new_raster, False)
+                                            basemap_group.insertLayer(0, new_raster)
+                                            temp_project.removeMapLayer(raster_layer.id())
+                                except Exception as e:
+                                    print(f"Clip failed: {e}")
                             break
 
             try:
