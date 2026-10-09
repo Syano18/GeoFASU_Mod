@@ -2,6 +2,10 @@
 # email: c.dacpano@psa.gov.ph
 # Modern UI stylesheet and theme utility for GeoFASU_Mod
 
+import os
+from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtGui import QPixmap
+
 MODERN_STYLE = """
 /* Global Dialog */
 QDialog {
@@ -168,3 +172,19 @@ QListWidget::item:selected {
 def apply_modern_style(widget):
     """Applies modern styling to the given Qt widget/dialog."""
     widget.setStyleSheet(MODERN_STYLE)
+
+def setup_dialog_logo(dialog, max_width=290, max_height=85):
+    """Safely loads and smoothly scales logo.png preserving aspect ratio."""
+    if hasattr(dialog, 'iconLabel'):
+        logo_path = os.path.join(os.path.dirname(__file__), 'icons', 'logo.png')
+        if os.path.exists(logo_path):
+            pixmap = QPixmap(logo_path)
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(
+                    max_width, max_height,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation
+                )
+                dialog.iconLabel.setPixmap(scaled)
+                dialog.iconLabel.setAlignment(Qt.AlignCenter)
+

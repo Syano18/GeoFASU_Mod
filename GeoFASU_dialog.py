@@ -20,7 +20,7 @@ from qgis.core import (
     QgsGeometry,
 )
 from qgis.gui import QgsFileWidget
-from .style import apply_modern_style
+from .style import apply_modern_style, setup_dialog_logo
 
 # Load the UI class from the .ui file
 FORM_CLASS, _ = uic.loadUiType(
@@ -33,6 +33,7 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         super().__init__(parent)
         self.setupUi(self)
         apply_modern_style(self)
+        setup_dialog_logo(self)
         self.progressBar.setValue(0)
         self.runButton.clicked.connect(self.run_process)
         self.outputDirWidget.setStorageMode(QgsFileWidget.GetDirectory)

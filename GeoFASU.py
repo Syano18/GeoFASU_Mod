@@ -22,9 +22,8 @@ class GeoFASU:
         # Path to icons folder
         icons_path = Path(__file__).parent / "icons"
 
-        # Create custom menu with icon
-        self.menu = QMenu("GeoFASU_Mod", self.iface.mainWindow())
-        self.menu.setIcon(QIcon(str(icons_path / "icon.png")))
+        # Create custom top-level menu
+        self.menu = QMenu("&GeoFASU_Mod", self.iface.mainWindow())
 
         # Create sub actions
         self.converter_action = QAction(

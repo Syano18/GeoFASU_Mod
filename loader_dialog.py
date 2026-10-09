@@ -28,7 +28,7 @@ from qgis.PyQt.QtWidgets import (
 
 from qgis.utils import iface
 
-from .style import apply_modern_style
+from .style import apply_modern_style, setup_dialog_logo
 
 # QFieldSync
 try:
@@ -48,6 +48,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
         self.iface = iface
         self.setupUi(self)
         apply_modern_style(self)
+        setup_dialog_logo(self)
         self.plugin_dir = os.path.dirname(__file__)
         self.load_successful = False
 
