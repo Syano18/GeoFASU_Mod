@@ -56,6 +56,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
         self.genrate.setEnabled(False)
         self.progbar.setValue(0)
 
+        self.comboxNOS.setPlaceholderText("-- Select Type of Survey --")
+        self.comboxMun.setPlaceholderText("-- Select City/Municipality --")
+        self.comboxRep.setPlaceholderText("-- Select Replicate Number --")
+
         # Signals
         self.fileWidget.fileChanged.connect(self.populate_nos_list)
         self.comboxNOS.currentIndexChanged.connect(self.update_mun_list)
@@ -118,38 +122,59 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
     # ---------- Combos ----------
     def populate_nos_list(self):
-        self.comboxNOS.clear(); self.comboxMun.clear(); self.comboxRep.clear()
-        self.aplqml.setEnabled(False); self.progbar.setValue(0)
+        self.comboxNOS.blockSignals(True)
+        self.comboxMun.blockSignals(True)
+        self.comboxRep.blockSignals(True)
+
+        self.comboxNOS.clear()
+        self.comboxMun.clear()
+        self.comboxRep.clear()
+        self.aplqml.setEnabled(False)
+        self.progbar.setValue(0)
 
         base_path = os.path.join(self.fileWidget.filePath(), 'Projects')
-        if not os.path.isdir(base_path):
-            return
-        dir_list = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
-        self.comboxNOS.addItem("")
-        self.comboxNOS.addItems(dir_list)
+        if os.path.isdir(base_path):
+            dir_list = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+            self.comboxNOS.addItems(dir_list)
+            self.comboxNOS.setCurrentIndex(-1)
+
+        self.comboxNOS.blockSignals(False)
+        self.comboxMun.blockSignals(False)
+        self.comboxRep.blockSignals(False)
 
     def update_mun_list(self):
-        self.comboxMun.clear(); self.comboxRep.clear()
+        self.comboxMun.blockSignals(True)
+        self.comboxRep.blockSignals(True)
+
+        self.comboxMun.clear()
+        self.comboxRep.clear()
         nos = self.comboxNOS.currentText().strip()
-        base_path = os.path.join(self.fileWidget.filePath(), 'Projects', nos)
-        if not os.path.isdir(base_path):
-            return
-        dirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
-        self.comboxMun.addItem("")
-        self.comboxMun.addItems(dirs)
+        if nos:
+            base_path = os.path.join(self.fileWidget.filePath(), 'Projects', nos)
+            if os.path.isdir(base_path):
+                dirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+                self.comboxMun.addItems(dirs)
+                self.comboxMun.setCurrentIndex(-1)
+
+        self.comboxMun.blockSignals(False)
+        self.comboxRep.blockSignals(False)
 
     def update_rep_list(self):
+        self.comboxRep.blockSignals(True)
         self.comboxRep.clear()
-        base_path = os.path.join(
-            self.fileWidget.filePath(), 'Projects',
-            self.comboxNOS.currentText().strip(),
-            self.comboxMun.currentText().strip()
-        )
-        if not os.path.isdir(base_path):
-            return
-        dirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
-        self.comboxRep.addItem("")
-        self.comboxRep.addItems(dirs)
+        nos = self.comboxNOS.currentText().strip()
+        mun = self.comboxMun.currentText().strip()
+        if nos and mun:
+            base_path = os.path.join(
+                self.fileWidget.filePath(), 'Projects',
+                nos, mun
+            )
+            if os.path.isdir(base_path):
+                dirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+                self.comboxRep.addItems(dirs)
+                self.comboxRep.setCurrentIndex(-1)
+
+        self.comboxRep.blockSignals(False)
 
     def on_rep_change(self):
         if self.comboxRep.currentText().strip():

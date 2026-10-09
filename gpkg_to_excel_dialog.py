@@ -27,33 +27,42 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
         self.progressBar.setValue(0)
         self.runButton.clicked.connect(self.run_process)
         
+        self.comboxNOS.setPlaceholderText("-- Select Type of Survey --")
+        self.comboxMun.setPlaceholderText("-- Select City/Municipality --")
+
         # Signals for dropdowns
         self.fileWidget.fileChanged.connect(self.populate_nos_list)
         self.comboxNOS.currentIndexChanged.connect(self.update_mun_list)
 
     def populate_nos_list(self):
+        self.comboxNOS.blockSignals(True)
+        self.comboxMun.blockSignals(True)
+
         self.comboxNOS.clear()
         self.comboxMun.clear()
         self.progressBar.setValue(0)
 
         base_path = os.path.join(self.fileWidget.filePath(), 'Validation Output')
-        if not os.path.isdir(base_path):
-            return
-        dir_list = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
-        self.comboxNOS.addItem("")
-        self.comboxNOS.addItems(dir_list)
+        if os.path.isdir(base_path):
+            dir_list = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+            self.comboxNOS.addItems(dir_list)
+            self.comboxNOS.setCurrentIndex(-1)
+
+        self.comboxNOS.blockSignals(False)
+        self.comboxMun.blockSignals(False)
 
     def update_mun_list(self):
+        self.comboxMun.blockSignals(True)
         self.comboxMun.clear()
         nos = self.comboxNOS.currentText().strip()
-        if not nos:
-            return
-        base_path = os.path.join(self.fileWidget.filePath(), 'Validation Output', nos)
-        if not os.path.isdir(base_path):
-            return
-        dirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
-        self.comboxMun.addItem("")
-        self.comboxMun.addItems(dirs)
+        if nos:
+            base_path = os.path.join(self.fileWidget.filePath(), 'Validation Output', nos)
+            if os.path.isdir(base_path):
+                dirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+                self.comboxMun.addItems(dirs)
+                self.comboxMun.setCurrentIndex(-1)
+
+        self.comboxMun.blockSignals(False)
 
     def run_process(self):
         base_dir = self.fileWidget.filePath().strip()

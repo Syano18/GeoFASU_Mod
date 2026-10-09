@@ -5,6 +5,7 @@
 import os
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QPixmap
+from qgis.PyQt.QtWidgets import QComboBox, QListView
 
 MODERN_STYLE = """
 /* Global Dialog */
@@ -61,14 +62,35 @@ QComboBox::down-arrow {
     height: 0;
 }
 
+/* Dropdown Popup List */
 QComboBox QAbstractItemView {
     background-color: #FFFFFF;
     border: 1px solid #CBD5E1;
     border-radius: 6px;
-    selection-background-color: #EFF6FF;
-    selection-color: #1D4ED8;
     padding: 4px;
     outline: none;
+    selection-background-color: #EFF6FF;
+    selection-color: #1D4ED8;
+    color: #1E293B;
+}
+
+QComboBox QAbstractItemView::item {
+    min-height: 28px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    margin: 1px 0px;
+    color: #1E293B;
+}
+
+QComboBox QAbstractItemView::item:hover {
+    background-color: #F1F5F9;
+    color: #0F172A;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: #EFF6FF;
+    color: #1D4ED8;
+    font-weight: 600;
 }
 
 /* Primary PushButtons */
@@ -178,6 +200,9 @@ QListWidget::item:selected {
 def apply_modern_style(widget):
     """Applies modern styling to the given Qt widget/dialog."""
     widget.setStyleSheet(MODERN_STYLE)
+    for cb in widget.findChildren(QComboBox):
+        cb.setView(QListView())
+
 
 def setup_dialog_logo(dialog, max_width=250, max_height=130):
     """Safely loads and smoothly scales logo.png preserving aspect ratio."""
