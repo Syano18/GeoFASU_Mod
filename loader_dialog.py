@@ -636,12 +636,14 @@ class LoaderDialog(QDialog, FORM_CLASS):
                             import processing
                             import tempfile
                             import uuid
+                            from osgeo import gdal
                             from qgis.core import (
                                 QgsVectorLayer,
                                 QgsFeature,
                                 QgsGeometry,
                                 QgsRasterLayer,
-                                QgsCoordinateTransform
+                                QgsCoordinateTransform,
+                                QgsVectorFileWriter
                             )
                             
                             raster_crs = raster_layer.crs()
@@ -651,7 +653,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                 xform = QgsCoordinateTransform(base_crs, raster_crs, temp_project.transformContext())
 
                             crs_auth = raster_crs.authid() if raster_crs.isValid() else base_crs.authid()
-                            mask_memory_layer = QgsVectorLayer(f"Polygon?crs={crs_auth}", "barangay_mask", "memory")
+                            mask_memory_layer = QgsVectorLayer(f"MultiPolygon?crs={crs_auth}", "barangay_mask", "memory")
                             dp = mask_memory_layer.dataProvider()
                             
                             mask_feats = []
@@ -669,47 +671,66 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                 dp.addFeatures(mask_feats)
                                 mask_memory_layer.updateExtents()
 
-                                temp_raster_path = os.path.join(
+                                temp_mask_path = os.path.join(
+                                    tempfile.gettempdir(),
+                                    f"mask_{inner_folder_name}_{uuid.uuid4().hex[:6]}.gpkg"
+                                )
+                                QgsVectorFileWriter.writeAsVectorFormat(
+                                    mask_memory_layer, temp_mask_path, "UTF-8", raster_crs, "GPKG"
+                                )
+
+                                temp_tif_path = os.path.join(
+                                    tempfile.gettempdir(),
+                                    f"{raster_layer.name()}_{inner_folder_name}_{uuid.uuid4().hex[:6]}.tif"
+                                )
+                                temp_mbtiles_path = os.path.join(
                                     tempfile.gettempdir(),
                                     f"{raster_layer.name()}_{inner_folder_name}_{uuid.uuid4().hex[:6]}.mbtiles"
                                 )
-                                if os.path.exists(temp_raster_path):
-                                    try:
-                                        os.remove(temp_raster_path)
-                                    except Exception:
-                                        pass
 
                                 params = {
                                     'INPUT': raster_layer,
-                                    'MASK': mask_memory_layer,
+                                    'MASK': temp_mask_path,
                                     'SOURCE_CRS': raster_crs if raster_crs.isValid() else None,
                                     'TARGET_CRS': raster_crs if raster_crs.isValid() else None,
                                     'NODATA': None,
                                     'ALPHA_BAND': True,
                                     'CROP_TO_CUTLINE': True,
                                     'KEEP_RESOLUTION': True,
-                                    'OPTIONS': 'TILE_FORMAT=PNG_JPEG',
-                                    'OUTPUT': temp_raster_path
+                                    'OPTIONS': 'COMPRESS=JPEG,JPEG_QUALITY=85,TILED=YES',
+                                    'OUTPUT': temp_tif_path
                                 }
                                 try:
                                     res = processing.run("gdal:cliprasterbymasklayer", params)
                                     if res and res.get('OUTPUT') and os.path.exists(res['OUTPUT']):
-                                        clipped_path = res['OUTPUT']
+                                        clipped_tif = res['OUTPUT']
                                         
-                                        try:
-                                            from osgeo import gdal
-                                            ds = gdal.Open(clipped_path, gdal.GA_Update)
-                                            if ds:
-                                                ds.BuildOverviews("NEAREST", [2, 4, 8, 16, 32, 64])
-                                                ds = None
-                                        except Exception as e:
-                                            print(f"GDAL overviews failed: {e}")
+                                        # Translate to MBTiles format
+                                        gdal.Translate(
+                                            temp_mbtiles_path,
+                                            clipped_tif,
+                                            format='MBTILES',
+                                            creationOptions=['TILE_FORMAT=JPEG', 'QUALITY=80', 'ZOOM_LEVEL_STRATEGY=AUTO']
+                                        )
+                                        
+                                        ds = gdal.Open(temp_mbtiles_path, gdal.GA_Update)
+                                        if ds:
+                                            ds.BuildOverviews("NEAREST", [2, 4, 8, 16, 32])
+                                            ds = None
                                             
-                                        new_raster = QgsRasterLayer(clipped_path, raster_layer.name(), "gdal")
+                                        new_raster = QgsRasterLayer(temp_mbtiles_path, raster_layer.name(), "gdal")
                                         if new_raster.isValid():
                                             temp_project.addMapLayer(new_raster, False)
                                             basemap_group.insertLayer(0, new_raster)
                                             temp_project.removeMapLayer(raster_layer.id())
+                                            
+                                        try:
+                                            if os.path.exists(clipped_tif):
+                                                os.remove(clipped_tif)
+                                            if os.path.exists(temp_mask_path):
+                                                os.remove(temp_mask_path)
+                                        except Exception:
+                                            pass
                                 except Exception as e:
                                     print(f"Clip failed: {e}")
                             break
