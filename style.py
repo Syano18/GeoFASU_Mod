@@ -34,6 +34,10 @@ QLineEdit, QComboBox {
     min-height: 22px;
 }
 
+QComboBox {
+    combobox-popup: 0;
+}
+
 QLineEdit:hover, QComboBox:hover {
     border-color: #94A3B8;
 }
