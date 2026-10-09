@@ -30,13 +30,16 @@ import re
 import sys
 
 src_dir = pathlib.Path(__file__).parent.resolve()
+parent_dir = str(src_dir.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 # remove previously loaded `libqfieldsync.whl` from the python import path
-for python_path in sys.path:
+for python_path in list(sys.path):
     if re.search(r"libqfieldsync.*\.whl$", python_path):
         sys.path.remove(python_path)
 
-# add the new `libqfieldsync.whl` file to the python import path
+# add the new `libqfieldsync.whl` file to the python import path (if present)
 for libqfieldsync_whl in src_dir.glob("libqfieldsync*.whl"):
     sys.path.append(str(libqfieldsync_whl))
 

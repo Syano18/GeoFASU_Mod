@@ -81,3 +81,5 @@ class ProjectConfig:
     coordinate_cursor_size = pfield(
         QFieldItemSize, "/coordinateCursorSize", QFieldItemSize.NORMAL
     )
+
+ProjectConfiguration = ProjectConfig
