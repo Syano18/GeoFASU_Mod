@@ -63,7 +63,14 @@
     </widget>
    </item>
    <item>
-    <widget class="QgsFileWidget" name="csvFileWidget"/>
+    <widget class="QgsFileWidget" name="csvFileWidget">
+     <property name="storageMode">
+      <enum>QgsFileWidget::GetFile</enum>
+     </property>
+     <property name="filter">
+      <string>Excel Files (*.xlsx)</string>
+     </property>
+    </widget>
    </item>
    <item>
     <widget class="QLabel" name="label_4">

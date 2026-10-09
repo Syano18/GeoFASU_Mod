@@ -36,6 +36,8 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         setup_dialog_logo(self)
         self.progressBar.setValue(0)
         self.runButton.clicked.connect(self.run_process)
+        self.csvFileWidget.setStorageMode(QgsFileWidget.GetFile)
+        self.csvFileWidget.setFilter("Excel Files (*.xlsx)")
         self.outputDirWidget.setStorageMode(QgsFileWidget.GetDirectory)
         self.typeofS.setFocus()
 
@@ -51,6 +53,14 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
                 self,
                 "Missing Input",
                 "Please provide all inputs: Excel file, output directory, and survey name.",
+            )
+            return
+
+        if not csv_path.lower().endswith(('.xlsx', '.xls')):
+            QMessageBox.warning(
+                self,
+                "Invalid File Type",
+                "Please select an Excel file (.xlsx).",
             )
             return
 
