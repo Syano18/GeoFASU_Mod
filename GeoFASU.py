@@ -1,12 +1,13 @@
-#Author: Mapping_Kalinga
-#email: c.dacpano@psa.gov.ph
+# Author: Mapping_Kalinga
+# email: c.dacpano@psa.gov.ph
 
 from qgis.PyQt.QtWidgets import QAction, QMenu
 from qgis.PyQt.QtGui import QIcon
 from pathlib import Path
 from .GeoFASU_dialog import GeoFASUDialog          # Converter UI
 from .gpkg_to_excel_dialog import GpkgToExcelDialog
-from .loader_dialog import LoaderDialog  # Loader UI (assumed)
+from .loader_dialog import LoaderDialog          # Loader UI
+from .folder_creator_dialog import FolderCreatorDialog  # Folder Creator UI
 from .updater import check_for_updates
 from . import resources_rc
 
@@ -15,8 +16,11 @@ class GeoFASU:
         self.iface = iface
         self.actions = []
         self.converter_dlg = None
+        self.gpkg_to_excel_dlg = None
         self.loader_dlg = None
+        self.folder_creator_dlg = None
         self.update_action = None
+        self.menu = None
 
     def initGui(self):
         # Path to icons folder
@@ -26,6 +30,13 @@ class GeoFASU:
         self.menu = QMenu("&GeoFASU_Mod", self.iface.mainWindow())
 
         # Create sub actions
+        self.folder_creator_action = QAction(
+            QIcon(str(icons_path / "icon.png")),
+            "Create Folder Structure",
+            self.iface.mainWindow()
+        )
+        self.folder_creator_action.triggered.connect(self.run_folder_creator)
+
         self.converter_action = QAction(
             QIcon(str(icons_path / "converter.png")),
             "Convert excel to gpkg",
@@ -33,19 +44,19 @@ class GeoFASU:
         )
         self.converter_action.triggered.connect(self.run_converter)
 
-        self.gpkg_to_excel_action = QAction(
-            QIcon(str(icons_path / "converter.png")),
-            "Convert geopackage to excel",
-            self.iface.mainWindow()
-        )
-        self.gpkg_to_excel_action.triggered.connect(self.run_gpkg_to_excel)
-
         self.loader_action = QAction(
             QIcon(str(icons_path / "loader.png")),
             "Load and Generate Qfield",
             self.iface.mainWindow()
         )
         self.loader_action.triggered.connect(self.run_loader)
+
+        self.gpkg_to_excel_action = QAction(
+            QIcon(str(icons_path / "converter.png")),
+            "Convert geopackage to excel",
+            self.iface.mainWindow()
+        )
+        self.gpkg_to_excel_action.triggered.connect(self.run_gpkg_to_excel)
 
         self.update_action = QAction(
             QIcon(str(icons_path / "icon.png")),
@@ -55,6 +66,8 @@ class GeoFASU:
         self.update_action.triggered.connect(lambda: check_for_updates(self.iface.mainWindow(), silent_if_latest=False))
 
         # Add actions into the custom menu
+        self.menu.addAction(self.folder_creator_action)
+        self.menu.addSeparator()
         self.menu.addAction(self.converter_action)
         self.menu.addAction(self.loader_action)
         self.menu.addAction(self.gpkg_to_excel_action)
@@ -77,6 +90,12 @@ class GeoFASU:
             self.menu.deleteLater()
             self.menu = None
             
+    def run_folder_creator(self):
+        if not self.folder_creator_dlg:
+            self.folder_creator_dlg = FolderCreatorDialog()
+        self.folder_creator_dlg.show()
+        self.folder_creator_dlg.exec_()
+
     def run_converter(self):
         if not self.converter_dlg:
             self.converter_dlg = GeoFASUDialog()
