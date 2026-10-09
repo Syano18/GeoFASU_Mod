@@ -18,14 +18,16 @@ GITHUB_REPO = "Syano18/GeoFASU_Mod"
 
 def get_metadata_info():
     metadata_path = Path(__file__).parent / "metadata.txt"
-    info = {"version": "0.0.0", "repository": GITHUB_REPO}
+    info = {"name": "GeoFASU_Mod", "version": "0.0.0", "repository": GITHUB_REPO}
     if not metadata_path.exists():
         return info
 
     with open(metadata_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line.startswith("version="):
+            if line.startswith("name="):
+                info["name"] = line.split("=", 1)[1].strip()
+            elif line.startswith("version="):
                 info["version"] = line.split("=", 1)[1].strip()
             elif line.startswith("repository="):
                 info["repository"] = line.split("=", 1)[1].strip().replace("https://github.com/", "").rstrip("/")
@@ -42,6 +44,7 @@ def parse_version_tuple(v_str):
 
 def check_for_updates(parent=None, silent_if_latest=False):
     meta = get_metadata_info()
+    plugin_name = meta.get("name", "GeoFASU_Mod")
     local_version = meta.get("version", "0.0.0")
     repo = meta.get("repository", GITHUB_REPO)
 
@@ -70,15 +73,16 @@ def check_for_updates(parent=None, silent_if_latest=False):
     zip_url = release_data.get("zipball_url")
 
     if parse_version_tuple(latest_tag) > parse_version_tuple(local_version):
-        release_notes = release_data.get("body", "").strip()
-        notes_preview = f"\n\nRelease Notes:\n{release_notes[:300]}..." if release_notes else ""
-        
+        msg_text = (
+            f"A new version of {plugin_name} is available!\n\n"
+            f"• Current version: {local_version}\n"
+            f"• Latest version: {latest_tag}\n\n"
+            "Do you want to download and install the update now?"
+        )
         reply = QMessageBox.question(
             parent,
             "Update Available",
-            f"A new version ({latest_tag}) is available!\n"
-            f"Current version: v{local_version}{notes_preview}\n\n"
-            "Would you like to download and install the update now?",
+            msg_text,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )

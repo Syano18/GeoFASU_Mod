@@ -239,12 +239,13 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
             self.progressBar.setValue(100)
             QCoreApplication.processEvents()
             QMessageBox.information(self, "Success", "Data successfully merged and exported to Filepinas and Excel folders.")
+            self.comboxMun.setCurrentIndex(-1)
+            self.progressBar.setValue(0)
 
         except Exception as e:
             QMessageBox.critical(self, "An Unexpected Error Occurred", f"Error: {e}")
         finally:
             self.runButton.setEnabled(True)
-            self.reset_fields()
 
     def reset_fields(self):
         self.fileWidget.setFilePath("")
