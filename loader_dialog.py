@@ -8,7 +8,7 @@ from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from qgis.PyQt import uic
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, QCoreApplication
 
 from qgis.core import (
     QgsProject,
@@ -28,6 +28,8 @@ from qgis.PyQt.QtWidgets import (
 
 from qgis.utils import iface
 
+from .style import apply_modern_style
+
 # QFieldSync
 try:
     from qfieldsync.core.cloud_converter import CloudConverter
@@ -45,6 +47,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
         super().__init__(parent)
         self.iface = iface
         self.setupUi(self)
+        apply_modern_style(self)
         self.plugin_dir = os.path.dirname(__file__)
         self.load_successful = False
 
@@ -71,6 +74,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
     def show_error(self, message: str):
         QMessageBox.critical(self, "Error", message)
         self.load_successful = False
+        self.loadbtn.setEnabled(True)
 
     def remove_all_layers(self):
         root = QgsProject.instance().layerTreeRoot()
@@ -152,6 +156,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
     # ---------- Load ----------
     def load_layers(self):
+        self.loadbtn.setEnabled(False)
+        self.progbar.setValue(5)
+        QCoreApplication.processEvents()
+
         try:
             working_dir = os.path.join(self.fileWidget.filePath().strip(), 'Projects')
             nos = self.comboxNOS.currentText().strip()
@@ -162,8 +170,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
                 return
 
             self.progbar.setValue(10)
+            QCoreApplication.processEvents()
             self.remove_all_layers()
             self.progbar.setValue(20)
+            QCoreApplication.processEvents()
 
             root = QgsProject.instance().layerTreeRoot()
             groups = {name: root.addGroup(name) for name in
@@ -196,7 +206,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
                 if isinstance(child, QgsLayerTreeLayer):
                     child.setExpanded(False)
 
-            self.progbar.setValue(30)
+            self.progbar.setValue(35)
+            QCoreApplication.processEvents()
 
             # Base Layer
             base_layer_path = os.path.join(self.fileWidget.filePath().strip(), 'Base Layers', f"{mun}.gpkg")
@@ -208,7 +219,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
             QgsProject.instance().addMapLayer(base_layer, False)
             groups['Base Layer'].addLayer(base_layer)
 
-            self.progbar.setValue(40)
+            self.progbar.setValue(50)
+            QCoreApplication.processEvents()
 
             # Reference Layer
             ref_layer_path = os.path.join(working_dir, nos, mun, rep, "Selected SSU_Ref.gpkg")
@@ -223,7 +235,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
             QgsProject.instance().addMapLayer(ref_layer, False)
             groups['Reference Layer'].addLayer(ref_layer)
-            self.progbar.setValue(60)
+            self.progbar.setValue(65)
+            QCoreApplication.processEvents()
 
             # Copy & load additional files to Samples/Tracklog
             rep_dir = os.path.join(working_dir, nos, mun, rep)
@@ -235,7 +248,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
                 ("tracklog.gpkg",   "tracklog.gpkg", "Tracklog", "tracklog"),
             ]
 
-            for src_name, dest_name, group_name, layer_name in file_ops:
+            step_inc = 25 / len(file_ops)
+            for idx, (src_name, dest_name, group_name, layer_name) in enumerate(file_ops):
                 src_path = os.path.join(self.plugin_dir, src_name)
                 dest_path = os.path.join(rep_dir, dest_name)
                 if not os.path.exists(src_path):
@@ -248,8 +262,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
                     return
                 QgsProject.instance().addMapLayer(lyr, False)
                 groups[group_name].addLayer(lyr)
-
-            self.progbar.setValue(90)
+                self.progbar.setValue(int(65 + (idx + 1) * step_inc))
+                QCoreApplication.processEvents()
 
             # Enable snapping on Selected SSU_Ref (works on old & new QGIS APIs)
             layer = next((lyr for lyr in QgsProject.instance().mapLayers().values()
@@ -264,8 +278,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                 ils.setTolerance(10)                 # pixels
                 ils.setUnits(QgsTolerance.Pixels)
 
-                # Newer QGIS (≥ ~3.12): setTypeFlag with Qgis.SnappingTypes
-                # Older QGIS: setType with QgsSnappingConfig.Vertex (deprecated but present)
                 if hasattr(ils, "setTypeFlag") and hasattr(Qgis, "SnappingType"):
                     ils.setTypeFlag(Qgis.SnappingTypes(Qgis.SnappingType.Vertex))
                 else:
@@ -278,6 +290,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
             self.progbar.setValue(100)
             self.genrate.setEnabled(False)
             self.load_successful = True
+            QCoreApplication.processEvents()
             QMessageBox.information(self, "Success", "Layers successfully loaded.")
 
             # Zoom to first valid layer in Basemap
@@ -291,10 +304,16 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
         except Exception as e:
             self.show_error(f"Unexpected error: {str(e)}")
+        finally:
+            if not self.load_successful:
+                self.loadbtn.setEnabled(True)
 
     # ---------- Styles ----------
     def apply_styles(self):
         self.loadbtn.setEnabled(False)
+        self.progbar.setValue(10)
+        QCoreApplication.processEvents()
+
         try:
             root = QgsProject.instance().layerTreeRoot()
             style_dir = os.path.join(self.plugin_dir, "QML")
@@ -325,13 +344,19 @@ class LoaderDialog(QDialog, FORM_CLASS):
                             lyr.loadNamedStyle(qml_path)
                             lyr.triggerRepaint()
 
+            self.progbar.setValue(25)
+            QCoreApplication.processEvents()
             apply_qml("Base Layer", "", "Barangay.qml")
+            self.progbar.setValue(45)
+            QCoreApplication.processEvents()
             apply_qml("Reference Layer", "", "Reference.qml")
+            self.progbar.setValue(65)
+            QCoreApplication.processEvents()
             apply_qml("Samples", "_Selected SSU", "Sample.qml")
             apply_qml("Samples", "_Additional", "Additional.qml")
-            apply_qml("Tracklog", "", "Tracklog.qml")   # ✅ fixed typo
-
-            QMessageBox.information(self, "Style Applied", "QML styles successfully applied.")
+            self.progbar.setValue(85)
+            QCoreApplication.processEvents()
+            apply_qml("Tracklog", "", "Tracklog.qml")
 
             # collapse layers in Samples
             samples_group = root.findGroup("Samples")
@@ -339,6 +364,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
                 for child in samples_group.children():
                     if isinstance(child, QgsLayerTreeLayer):
                         child.setExpanded(False)
+
+            self.progbar.setValue(100)
+            QCoreApplication.processEvents()
+            QMessageBox.information(self, "Style Applied", "QML styles successfully applied.")
 
             self.aplqml.setEnabled(False)
             self.genrate.setEnabled(True)
@@ -371,27 +400,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
             QMessageBox.critical(self, "Error", "NOS, MUN, and REP must be selected.")
             return
 
-        # ---------- Lock non-sample layers ----------
-        def lock_non_sample_layers():
-            """Set all layers except those under 'Samples' as read-only and non-identifiable."""
-            root = QgsProject.instance().layerTreeRoot()
-            sample_group = root.findGroup("Samples")
-            sample_layers = set()
-            if sample_group:
-                for child in sample_group.children():
-                    if isinstance(child, QgsLayerTreeLayer) and child.layer():
-                        sample_layers.add(child.layer().id())
-
-            for layer in QgsProject.instance().mapLayers().values():
-                if layer.id() not in sample_layers:
-                    try:
-                        # Disable identify
-                        layer.setCustomProperty("identify/disabled", True)
-                        # Set read-only
-                        layer.setReadOnly(True)
-                    except Exception:
-                        pass
-
         # ---------- Detect PSU count before asking ----------
         layer = self.get_reference_layer("Selected SSU_Ref")
         single_psu_only = False
@@ -406,7 +414,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
         # ---------- Ask only if more than one PSU ----------
         if single_psu_only:
-            reply = QMessageBox.Yes  # Route single PSUs into the batch flow
+            reply = QMessageBox.Yes
         else:
             reply = QMessageBox.question(
                 self, "Export by PSU?",
@@ -421,18 +429,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
             pass
 
         def run_convert(inner_folder_name, psu_filter=None, progress_callback=None):
-            """
-            Creates <base_path>/Package for Qfield/<nos>/<inner_folder_name>,
-            optionally filters 'Selected SSU_Ref' by PSU,
-            renames '*_attachments.zip' -> 'attachments.zip',
-            packs produced .qgs into <inner_folder_name>.qgz (ONLY),
-            safely restores filter; returns path to the .qgz.
-            """
             def set_prog(val):
                 if progress_callback:
                     progress_callback(val)
-                from PyQt5.QtWidgets import QApplication
-                QApplication.processEvents()
+                QCoreApplication.processEvents()
 
             set_prog(5)
             target_root = base_path / "Package for Qfield" / nos
@@ -453,7 +453,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
             
             temp_project = QgsProject()
             temp_project.read(temp_proj_path)
-            # Make sure baseName is set for CloudConverter so qgs filename is clean
             temp_project.setFileName(str(target_dir / f"{inner_folder_name}.qgz"))
 
             ref_extent = None
@@ -538,9 +537,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                 target_field = cand
                                 break
 
-                        # Clean psu_filter to candidate barangay names
                         base_filter = re.split(r'\s*-\s*EA\b', psu_filter, flags=re.IGNORECASE)[0].strip()
-                        # Remove leading code e.g. "001 - " or "PSU 1 - "
                         base_filter_clean = re.sub(r'^\s*(\d+|PSU\s*\d*)\s*[-_:]\s*', '', base_filter, flags=re.IGNORECASE).strip()
                         
                         parts = re.split(r'\s*\+\s*|\s*/\s*|\s*&\s*|\s+and\s+', base_filter_clean, flags=re.IGNORECASE)
@@ -555,7 +552,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                         matching_features.append(feat)
                                         break
 
-                    # Apply subset filter on Base Layer so only matched barangay is shown
+                    # Apply subset filter on Base Layer
                     if matching_features:
                         field_names = [f.name() for f in base_layer_for_mask.fields()]
                         target_field = "name"
@@ -564,7 +561,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                 target_field = cand
                                 break
                         
-                        # Match by primary key (fid) or attribute
                         if "fid" in field_names:
                             fid_list = [str(f.id()) for f in matching_features]
                             base_layer_for_mask.setSubsetString(f"\"fid\" IN ({', '.join(fid_list)})")
@@ -591,7 +587,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                 QgsCoordinateTransform
                             )
                             
-                            # Build memory mask layer matching raster CRS for exact clipping
                             raster_crs = raster_layer.crs()
                             base_crs = base_layer_for_mask.crs()
                             xform = None
@@ -663,7 +658,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                             break
 
             try:
-                # Lock non-sample layers in temp_project
                 root = temp_project.layerTreeRoot()
                 sample_group = root.findGroup("Samples")
                 sample_layers = set()
@@ -688,7 +682,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                     conv.convert()
                 finally:
                     qgis.utils.iface.addProject = original_addProject
-                    # Release file locks by clearing temp_project explicitly
                     del conv
                     temp_project.clear()
                     del temp_project
@@ -729,7 +722,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                     new_gpkg_name = f"{nos}_{mun}_Selected SSU_{rep}_{psu_filter}.gpkg"
                     old_gpkg_path = target_dir / old_gpkg_name
                     if old_gpkg_path.exists():
-                        # Retry loop in case Windows is slow releasing the file lock
                         for _ in range(10):
                             try:
                                 old_gpkg_path.rename(target_dir / new_gpkg_name)
@@ -783,16 +775,15 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
         # ---------- If not exporting per PSU ----------
         if reply == QMessageBox.No:
-            from PyQt5.QtWidgets import QApplication
             self.genrate.setEnabled(False)
             self.progbar.setValue(0)
-            QApplication.processEvents()
+            QCoreApplication.processEvents()
             inner_folder = f"{nos}_{mun}_Selected SSU_{rep}"
             try:
                 filter_val = single_psu_name if single_psu_only else None
                 qgz_path = run_convert(inner_folder, psu_filter=filter_val, progress_callback=self.progbar.setValue)
                 self.progbar.setValue(100)
-                QApplication.processEvents()
+                QCoreApplication.processEvents()
                 QMessageBox.information(self, "Export Successful",
                                         f"Folder:\n{qgz_path.parent}\n\nProject (.qgz only):\n{qgz_path}")
                 # Reset UI
@@ -831,17 +822,16 @@ class LoaderDialog(QDialog, FORM_CLASS):
             if not selected_psus:
                 return  # user cancelled
 
-        from PyQt5.QtWidgets import QApplication
         self.genrate.setEnabled(False)
         self.progbar.setValue(0)
-        QApplication.processEvents()
+        QCoreApplication.processEvents()
 
         success, fail = 0, 0
         errors = []
         total = len(selected_psus)
         for i, psu in enumerate(selected_psus):
             self.progbar.setValue(int((i / total) * 100))
-            QApplication.processEvents()
+            QCoreApplication.processEvents()
             
             def make_cb(index):
                 def cb(p):
@@ -857,7 +847,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
                 errors.append(f"{psu}: {e}")
 
         self.progbar.setValue(100)
-        QApplication.processEvents()
+        QCoreApplication.processEvents()
         summary = f"Generated {success} Qfield Projects"
 
         # Reset UI
@@ -881,18 +871,22 @@ class LoaderDialog(QDialog, FORM_CLASS):
         """Modal dialog to choose multiple PSU names. Returns a list of selected names."""
         dlg = QDialog(self)
         dlg.setWindowTitle("Choose PSU Name(s)")
+        apply_modern_style(dlg)
 
         label = QLabel("Select one or more PSU Name:")
         listw = QListWidget()
         listw.addItems(psu_names)
         listw.setSelectionMode(QAbstractItemView.MultiSelection)
-        listw.setMinimumWidth(420)
+        listw.setMinimumWidth(440)
         listw.setMinimumHeight(320)
 
         btn_ok = QPushButton("Export")
         btn_cancel = QPushButton("Cancel")
+        btn_cancel.setProperty("secondary", True)
         btn_all = QPushButton("Select All")
+        btn_all.setProperty("secondary", True)
         btn_clear = QPushButton("Clear")
+        btn_clear.setProperty("secondary", True)
 
         def _select_all():
             listw.selectAll()
@@ -923,6 +917,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
         btns.addWidget(btn_ok)
 
         layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(12)
         layout.addWidget(label)
         layout.addWidget(listw)
         layout.addLayout(btns_left)

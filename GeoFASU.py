@@ -23,7 +23,7 @@ class GeoFASU:
         icons_path = Path(__file__).parent / "icons"
 
         # Create custom menu with icon
-        self.menu = QMenu("GeoFASU", self.iface.mainWindow())
+        self.menu = QMenu("GeoFASU_Mod", self.iface.mainWindow())
         self.menu.setIcon(QIcon(str(icons_path / "icon.png")))
 
         # Create sub actions
@@ -62,30 +62,21 @@ class GeoFASU:
         self.menu.addSeparator()
         self.menu.addAction(self.update_action)
 
-        # Finally add your custom menu into QGIS Plugins menu bar
-        self.iface.pluginMenu().addMenu(self.menu)
+        # Add custom menu directly to QGIS top-level menu bar
+        menu_bar = self.iface.mainWindow().menuBar()
+        help_menu = self.iface.helpMenu() if hasattr(self.iface, 'helpMenu') else None
+        if help_menu:
+            menu_bar.insertMenu(help_menu.menuAction(), self.menu)
+        else:
+            menu_bar.addMenu(self.menu)
 
     def unload(self):
-        # Remove the actions from the menu bar
-        if self.converter_action:
-            self.iface.removePluginMenu("GeoFASU", self.converter_action)
-            self.iface.removeToolBarIcon(self.converter_action)
-
-        if hasattr(self, 'gpkg_to_excel_action') and self.gpkg_to_excel_action:
-            self.iface.removePluginMenu("GeoFASU", self.gpkg_to_excel_action)
-            self.iface.removeToolBarIcon(self.gpkg_to_excel_action)
-
-        if self.loader_action:
-            self.iface.removePluginMenu("GeoFASU", self.loader_action)
-            self.iface.removeToolBarIcon(self.loader_action)
-
-        if hasattr(self, 'update_action') and self.update_action:
-            self.iface.removePluginMenu("GeoFASU", self.update_action)
-            self.iface.removeToolBarIcon(self.update_action)
-
-        # Remove the whole GeoFASU menu
+        # Remove the top-level menu from the QGIS main window menu bar
         if self.menu:
-            self.iface.pluginMenu().removeAction(self.menu.menuAction())
+            menu_bar = self.iface.mainWindow().menuBar()
+            menu_bar.removeAction(self.menu.menuAction())
+            self.menu.deleteLater()
+            self.menu = None
             
     def run_converter(self):
         if not self.converter_dlg:

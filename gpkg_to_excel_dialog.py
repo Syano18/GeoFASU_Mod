@@ -1,3 +1,6 @@
+# Author: Mapping_Kalinga
+# email: c.dacpano@psa.gov.ph
+
 import os
 import re
 import pandas as pd
@@ -5,8 +8,11 @@ from collections import defaultdict
 
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
-from qgis.core import QgsVectorLayer
+from qgis.PyQt.QtCore import QCoreApplication
+from qgis.core import QgsVectorLayer, QgsProviderRegistry
 import processing
+
+from .style import apply_modern_style
 
 FORM_CLASS, _ = uic.loadUiType(
     os.path.join(os.path.dirname(__file__), "gpkg_to_excel_dialog.ui")
@@ -16,6 +22,7 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        apply_modern_style(self)
         self.progressBar.setValue(0)
         self.runButton.clicked.connect(self.run_process)
         
@@ -72,7 +79,6 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
             for file in files:
                 if file.endswith('.gpkg'):
                     gpkg_path = os.path.join(root, file)
-                    # Extract replicate number from the path
                     match = re.search(r'_Selected SSU_(R\d+)', gpkg_path)
                     if match:
                         rep_no = match.group(1)
@@ -122,20 +128,23 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                     QMessageBox.critical(self, "Error", f"Failed to delete existing file before overwriting:\n{f}\nError: {e}")
                     return
 
+        self.runButton.setEnabled(False)
+        self.progressBar.setValue(0)
+        QCoreApplication.processEvents()
+
         try:
             total_reps = len(rep_gpkgs)
             current_rep = 0
-            self.progressBar.setValue(0)
             
             for rep_no, gpkg_list in rep_gpkgs.items():
                 base_prog = int((current_rep / total_reps) * 100)
                 self.progressBar.setValue(base_prog + 5)
+                QCoreApplication.processEvents()
                 
                 merged_gpkg_name = f"{nos}_{mun}_Selected SSU_{rep_no}.gpkg"
                 merged_gpkg_path = os.path.join(filepinas_dir, merged_gpkg_name)
                 
                 layers_to_merge = []
-                from qgis.core import QgsProviderRegistry
                 for g in gpkg_list:
                     sublayers = QgsProviderRegistry.instance().providerMetadata('ogr').querySublayers(g)
                     valid_layer = None
@@ -162,6 +171,9 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                 }
                 temp_merged = processing.run("native:mergevectorlayers", params)['OUTPUT']
                 
+                self.progressBar.setValue(base_prog + int(40 / total_reps))
+                QCoreApplication.processEvents()
+
                 # Delete 'layer' and 'path' columns and save to final GPKG
                 params_del = {
                     'INPUT': temp_merged,
@@ -170,7 +182,8 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                 }
                 processing.run("native:deletecolumn", params_del)
                 
-                self.progressBar.setValue(base_prog + (50 // total_reps))
+                self.progressBar.setValue(base_prog + int(65 / total_reps))
+                QCoreApplication.processEvents()
                 
                 # Convert the merged layer to excel
                 excel_name = f"{nos}_{mun}_Selected SSU_{rep_no}.xlsx"
@@ -192,12 +205,9 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                         row = {}
                         for name in field_names:
                             val = feat[name]
-                            # Check for NULL values
                             if val is None or (hasattr(val, 'isNull') and val.isNull()) or type(val).__name__ == 'QPyNullVariant' or str(val) == 'NULL':
                                 val = ""
                             elif 'ID' in name.upper():
-                                # Force ID fields (like GEOID) to string to avoid scientific notation
-                                # if they happen to be numeric types
                                 val = str(val)
                             row[name] = val
                             
@@ -209,19 +219,21 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                         data.append(row)
                     
                     df = pd.DataFrame(data)
-                    # Pandas sometimes converts empty strings back to NaN, fillna to be sure
                     df = df.fillna("")
                     df.to_excel(excel_path, index=False)
                 
                 current_rep += 1
                 self.progressBar.setValue(int((current_rep / total_reps) * 100))
+                QCoreApplication.processEvents()
                 
             self.progressBar.setValue(100)
+            QCoreApplication.processEvents()
             QMessageBox.information(self, "Success", "Data successfully merged and exported to Filepinas and Excel folders.")
 
         except Exception as e:
             QMessageBox.critical(self, "An Unexpected Error Occurred", f"Error: {e}")
         finally:
+            self.runButton.setEnabled(True)
             self.reset_fields()
 
     def reset_fields(self):

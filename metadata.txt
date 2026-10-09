@@ -1,5 +1,5 @@
 [general]
-name=GeoFASU
+name=GeoFASU_Mod
 qgisMinimumVersion=3.36
 supportsQt6=True
 description="Modified for field data collection"

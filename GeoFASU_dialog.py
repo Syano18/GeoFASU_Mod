@@ -1,6 +1,6 @@
 # Author: Mapping_Kalinga
 # email: c.dacpano@psa.gov.ph
-# Refactored for robustness and clarity.
+# Refactored for robustness, modern UI and responsive progress.
 
 import os
 import shutil
@@ -8,7 +8,7 @@ import pandas as pd
 
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
-from qgis.PyQt.QtCore import Qt, QVariant
+from qgis.PyQt.QtCore import Qt, QVariant, QCoreApplication
 from qgis.PyQt.QtGui import QPixmap
 from qgis.core import (
     QgsVectorLayer,
@@ -20,6 +20,7 @@ from qgis.core import (
     QgsGeometry,
 )
 from qgis.gui import QgsFileWidget
+from .style import apply_modern_style
 
 # Load the UI class from the .ui file
 FORM_CLASS, _ = uic.loadUiType(
@@ -31,6 +32,7 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         """Initializes the dialog."""
         super().__init__(parent)
         self.setupUi(self)
+        apply_modern_style(self)
         self.progressBar.setValue(0)
         self.runButton.clicked.connect(self.run_process)
         self.outputDirWidget.setStorageMode(QgsFileWidget.GetDirectory)
@@ -38,8 +40,8 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
 
     def run_process(self):
         """Main function to execute the entire process when the 'Run' button is clicked."""
-        csv_path = self.csvFileWidget.filePath()
-        out_dir = self.outputDirWidget.filePath()
+        csv_path = self.csvFileWidget.filePath().strip()
+        out_dir = self.outputDirWidget.filePath().strip()
         folder_name = self.typeofS.text().strip()
 
         # --- 1. Input Validation ---
@@ -51,12 +53,15 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
             )
             return
 
+        self.runButton.setEnabled(False)
+        self.progressBar.setValue(0)
+        QCoreApplication.processEvents()
+
         try:
             # --- 2. Read and Prepare Data ---
             df = self._read_and_combine_sheets(csv_path)
 
             if df is None or df.empty:
-                # Error message is shown inside the reading function
                 return
 
             # --- 3. Create Output Directories ---
@@ -71,14 +76,20 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
             os.makedirs(filepinas_folder, exist_ok=True)
             os.makedirs(excel_folder, exist_ok=True)
 
+            self.progressBar.setValue(10)
+            QCoreApplication.processEvents()
+
             # --- 4. Process and Export Data ---
             self._export_to_geopackages(df, project_folder, filepinas_folder, excel_folder)
 
+            self.progressBar.setValue(100)
+            QCoreApplication.processEvents()
             QMessageBox.information(self, "Success", "GeoPackages created successfully.")
 
         except Exception as e:
             QMessageBox.critical(self, "An Unexpected Error Occurred", f"Error: {e}")
         finally:
+            self.runButton.setEnabled(True)
             self.reset_fields()
 
     def _read_and_combine_sheets(self, csv_path):
@@ -92,30 +103,22 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         # --- 1. Read the REQUIRED 'Sample SSU' sheet ---
         try:
             df_sample = pd.read_excel(csv_path, sheet_name='Sample SSU', dtype=str)
-            print("✅ 'Sample SSU' sheet loaded.")
         except (ValueError, KeyError):
             QMessageBox.critical(
                 self,
                 "Required Sheet Missing",
                 "The required sheet 'Sample SSU' was not found in the Excel file. The process cannot continue.",
             )
-            return None # Stop the process because the required sheet is missing
+            return None
 
         # --- 2. Read the OPTIONAL 'Replacement SSU' sheet ---
         try:
             df_replacement = pd.read_excel(csv_path, sheet_name='Replacement SSU', dtype=str)
-            print("✅ 'Replacement SSU' sheet found and will be combined.")
         except (ValueError, KeyError):
-            # This is not an error, just an optional step, so we only print a message
-            print("⚠️ 'Replacement SSU' sheet not found. Continuing with 'Sample SSU' data only.")
-            # df_replacement will remain None
+            pass
 
         # --- 3. Combine the dataframes ---
-        # Create a list containing only the dataframes that were successfully loaded.
-        # df_sample is guaranteed to be here, df_replacement may or may not be.
         valid_dfs = [df for df in [df_sample, df_replacement] if df is not None]
-        
-        # Combine the data
         df = pd.concat(valid_dfs, ignore_index=True)
 
         # --- 4. Data Cleaning and Validation ---
@@ -123,12 +126,12 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
             QMessageBox.critical(self, "Input Error", "A 'WKT' column is required but was not found.")
             return None
             
-        df = df.dropna(subset=['WKT'])  # Ensure no missing WKT values
+        df = df.dropna(subset=['WKT'])
         if df.empty:
             QMessageBox.warning(self, "No Valid Geometries", "No rows with valid WKT geometry were found after cleaning.")
             return None
 
-        df = df.fillna("")  # Fill other missing data with empty strings
+        df = df.fillna("")
         return df
 
     def _export_to_geopackages(self, df, project_folder, filepinas_folder, excel_folder):
@@ -155,9 +158,12 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
             os.makedirs(mun_filepinas_path, exist_ok=True)
             os.makedirs(mun_excel_path, exist_ok=True)
 
-            for rep_num, group_rep in group_mun.groupby('Replicate_Number'):
+            reps = group_mun.groupby('Replicate_Number')
+            total_reps = len(reps)
+            rep_idx = 0
+
+            for rep_num, group_rep in reps:
                 rep_folder_path = os.path.join(mun_project_path, f"R{str(rep_num)}")
-                # Overwrite existing folder for this replicate
                 if os.path.exists(rep_folder_path):
                     shutil.rmtree(rep_folder_path)
                 os.makedirs(rep_folder_path)
@@ -192,8 +198,13 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
                 out_path = os.path.join(rep_folder_path, "Selected SSU_Ref.gpkg")
                 QgsVectorFileWriter.writeAsVectorFormat(mem_layer, out_path, "UTF-8", crs, "GPKG")
 
+                rep_idx += 1
+                # Responsive granular progress calculation
+                step_prog = int(10 + (((count + (rep_idx / total_reps)) / total_mun) * 85))
+                self.progressBar.setValue(min(step_prog, 95))
+                QCoreApplication.processEvents()
+
             count += 1
-            self.progressBar.setValue(int((count / total_mun) * 100))
 
     def reset_fields(self):
         """Resets all input fields and the progress bar to their default state."""
