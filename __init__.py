@@ -1,3 +1,6 @@
+# Developer: TechCraft by Chano
+# email: c.dacpano@psa.gov.ph
+
 import os
 os.environ['OPENPYXL_LXML'] = 'False'
 

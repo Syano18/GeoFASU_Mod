@@ -1,4 +1,4 @@
-# Author: Mapping_Kalinga
+# Developer: TechCraft by Chano
 # email: c.dacpano@psa.gov.ph
 
 from qgis.PyQt.QtWidgets import QAction, QMenu

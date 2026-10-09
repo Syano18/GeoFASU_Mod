@@ -1,8 +1,7 @@
-# Author: Mapping_Kalinga
+# Developer: TechCraft by Chano
 # email: c.dacpano@psa.gov.ph
 
 import os
-import subprocess
 from pathlib import Path
 
 from qgis.PyQt import uic
@@ -66,11 +65,27 @@ class FolderCreatorDialog(QDialog, FORM_CLASS):
             return os.path.normpath(os.path.join(*parts))
         return ""
 
+    def are_folders_present(self, target_dir):
+        """Checks if all standard subfolders already exist inside target_dir."""
+        if not target_dir or not os.path.isdir(target_dir):
+            return False
+        return all(os.path.isdir(os.path.join(target_dir, f)) for f in STANDARD_FOLDERS)
+
     def update_preview(self):
         target = self.get_target_path()
         self.previewEdit.setText(target)
-        if os.path.isdir(target):
+        
+        folders_exist = self.are_folders_present(target)
+        if folders_exist:
+            self.createBtn.setEnabled(False)
+            self.createBtn.setText("Folders Already Present")
+            self.createBtn.setToolTip("All standard project folders are already present in this directory.")
             self.openBtn.setEnabled(True)
+        else:
+            self.createBtn.setEnabled(bool(target))
+            self.createBtn.setText("Create Folders")
+            self.createBtn.setToolTip("")
+            self.openBtn.setEnabled(os.path.isdir(target))
 
     def create_folders(self):
         base = self.baseDirWidget.filePath().strip()
@@ -84,6 +99,15 @@ class FolderCreatorDialog(QDialog, FORM_CLASS):
         target_dir = self.get_target_path()
         if not target_dir:
             QMessageBox.warning(self, "Invalid Path", "Please enter a valid directory structure.")
+            return
+
+        if self.are_folders_present(target_dir):
+            QMessageBox.information(
+                self,
+                "Folders Already Present",
+                f"The standard GeoFASU folder structure already exists at:\n\n{target_dir}"
+            )
+            self.update_preview()
             return
 
         self.createBtn.setEnabled(False)
@@ -117,7 +141,7 @@ class FolderCreatorDialog(QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(self, "Creation Failed", f"Failed to create folders:\n{str(e)}")
         finally:
-            self.createBtn.setEnabled(True)
+            self.update_preview()
 
     def open_in_explorer(self):
         target_dir = self.get_target_path()

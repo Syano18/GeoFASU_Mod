@@ -1,4 +1,4 @@
-# Author: Mapping_Kalinga
+# Developer: TechCraft by Chano
 # email: c.dacpano@psa.gov.ph
 # Modern UI stylesheet and theme utility for GeoFASU_Mod
 
