@@ -29,9 +29,9 @@ class GeoFASU:
         # Create custom top-level menu
         self.menu = QMenu("&GeoFASU_Mod", self.iface.mainWindow())
 
-        # Create sub actions
+        # Create sub actions with dedicated icons
         self.folder_creator_action = QAction(
-            QIcon(str(icons_path / "icon.png")),
+            QIcon(str(icons_path / "folder.png")),
             "Create Folder Structure",
             self.iface.mainWindow()
         )
@@ -52,14 +52,14 @@ class GeoFASU:
         self.loader_action.triggered.connect(self.run_loader)
 
         self.gpkg_to_excel_action = QAction(
-            QIcon(str(icons_path / "converter.png")),
+            QIcon(str(icons_path / "gpkg_to_excel.png")),
             "Convert geopackage to excel",
             self.iface.mainWindow()
         )
         self.gpkg_to_excel_action.triggered.connect(self.run_gpkg_to_excel)
 
         self.update_action = QAction(
-            QIcon(str(icons_path / "icon.png")),
+            QIcon(str(icons_path / "update.png")),
             "Check for Updates...",
             self.iface.mainWindow()
         )
