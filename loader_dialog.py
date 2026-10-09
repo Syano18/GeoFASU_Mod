@@ -77,16 +77,35 @@ class LoaderDialog(QDialog, FORM_CLASS):
         return s.rstrip(" .")
 
     def show_error(self, message: str):
-        QMessageBox.critical(self, "Error", message)
         self.load_successful = False
+        self.progbar.setValue(0)
+        self.remove_all_layers()
         self.loadbtn.setEnabled(True)
+        self.aplqml.setEnabled(False)
+        self.genrate.setEnabled(False)
+        QCoreApplication.processEvents()
+        QMessageBox.critical(self, "Error", message)
 
     def remove_all_layers(self):
-        root = QgsProject.instance().layerTreeRoot()
-        for group_name in ['Basemap', 'Base Layer', 'Reference Layer', 'Samples', 'Tracklog']:
+        project = QgsProject.instance()
+        root = project.layerTreeRoot()
+        for group_name in ['Tracklog', 'Samples', 'Reference Layer', 'Base Layer', 'Basemap']:
             group = root.findGroup(group_name)
             if group:
+                for child in list(group.findLayers()):
+                    lyr = child.layer()
+                    if lyr:
+                        project.removeMapLayer(lyr.id())
                 root.removeChildNode(group)
+
+        # Clean up any lingering GeoFASU-related layers from project
+        known_keywords = ["Selected SSU", "Additional SSU", "Replacement PSU", "tracklog", "Bgy Bdry."]
+        for layer_id, layer in list(project.mapLayers().items()):
+            if layer and (any(kw in layer.name() for kw in known_keywords) or layer.name().endswith("_img")):
+                project.removeMapLayer(layer_id)
+
+        if hasattr(self, 'iface') and self.iface and self.iface.mapCanvas():
+            self.iface.mapCanvas().refresh()
 
     def reset_all(self):
         """Reset UI and, if load failed, remove added groups."""
@@ -332,7 +351,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
             self.show_error(f"Unexpected error: {str(e)}")
         finally:
             if not self.load_successful:
+                self.progbar.setValue(0)
                 self.loadbtn.setEnabled(True)
+                self.aplqml.setEnabled(False)
+                self.genrate.setEnabled(False)
 
     # ---------- Styles ----------
     def apply_styles(self):
@@ -352,8 +374,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
                     isinstance(c, QgsLayerTreeLayer) and c.layer() and c.layer().isValid()
                     for c in group.children()
                 ):
-                    QMessageBox.critical(self, "Error", "No/Missing Groups/Layer Loaded")
-                    self.aplqml.setEnabled(False)
+                    self.show_error("No/Missing Groups/Layer Loaded")
                     return
 
             def apply_qml(group_name: str, keyword: str, qml_file: str):
