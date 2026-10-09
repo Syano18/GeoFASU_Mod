@@ -162,6 +162,11 @@ QListWidget::item:hover {
     background-color: #F1F5F9;
 }
 
+QLabel#iconLabel {
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
+
 QListWidget::item:selected {
     background-color: #EFF6FF;
     color: #1D4ED8;
@@ -173,7 +178,7 @@ def apply_modern_style(widget):
     """Applies modern styling to the given Qt widget/dialog."""
     widget.setStyleSheet(MODERN_STYLE)
 
-def setup_dialog_logo(dialog, max_width=290, max_height=85):
+def setup_dialog_logo(dialog, max_width=340, max_height=115):
     """Safely loads and smoothly scales logo.png preserving aspect ratio."""
     if hasattr(dialog, 'iconLabel'):
         logo_path = os.path.join(os.path.dirname(__file__), 'icons', 'logo.png')
