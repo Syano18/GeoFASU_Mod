@@ -42,10 +42,7 @@ class FolderCreatorDialog(QDialog, FORM_CLASS):
         self.progressBar.setValue(0)
         
         # Default suggested values
-        default_base = os.path.join("C:\\", "PSA-GIS", "GeoFASU")
-        if not os.path.exists(default_base):
-            default_base = os.path.join(str(Path.home()), "PSA-GIS", "GeoFASU")
-            
+        default_base = r"C:\PSA-GIS\GeoFASU"
         self.baseDirWidget.setFilePath(default_base)
         self.provinceEdit.setText("Kalinga")
         self.projectFolderEdit.setText("Project files")
