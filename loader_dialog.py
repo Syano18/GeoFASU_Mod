@@ -679,60 +679,51 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                     mask_memory_layer, temp_mask_path, "UTF-8", raster_crs, "GPKG"
                                 )
 
+                                # Calculate exact bounding box to avoid scanning entire municipality raster
+                                extent = mask_memory_layer.extent()
+                                if mask_memory_layer.crs() != raster_crs and mask_memory_layer.crs().isValid() and raster_crs.isValid():
+                                    xform_box = QgsCoordinateTransform(mask_memory_layer.crs(), raster_crs, temp_project.transformContext())
+                                    extent = xform_box.transformBoundingBox(extent)
+                                bounds = [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
+
                                 temp_tif_path = os.path.join(
                                     tempfile.gettempdir(),
                                     f"{raster_layer.name()}_{inner_folder_name}_{uuid.uuid4().hex[:6]}.tif"
                                 )
-                                temp_mbtiles_path = os.path.join(
-                                    tempfile.gettempdir(),
-                                    f"{raster_layer.name()}_{inner_folder_name}_{uuid.uuid4().hex[:6]}.mbtiles"
-                                )
 
-                                params = {
-                                    'INPUT': raster_layer,
-                                    'MASK': temp_mask_path,
-                                    'SOURCE_CRS': raster_crs if raster_crs.isValid() else None,
-                                    'TARGET_CRS': raster_crs if raster_crs.isValid() else None,
-                                    'NODATA': None,
-                                    'ALPHA_BAND': True,
-                                    'CROP_TO_CUTLINE': True,
-                                    'KEEP_RESOLUTION': True,
-                                    'OPTIONS': 'COMPRESS=JPEG,JPEG_QUALITY=85,TILED=YES',
-                                    'OUTPUT': temp_tif_path
-                                }
                                 try:
-                                    res = processing.run("gdal:cliprasterbymasklayer", params)
-                                    if res and res.get('OUTPUT') and os.path.exists(res['OUTPUT']):
-                                        clipped_tif = res['OUTPUT']
-                                        
-                                        # Translate to MBTiles format
-                                        gdal.Translate(
-                                            temp_mbtiles_path,
-                                            clipped_tif,
-                                            format='MBTILES',
-                                            creationOptions=['TILE_FORMAT=JPEG', 'QUALITY=80', 'ZOOM_LEVEL_STRATEGY=AUTO']
-                                        )
-                                        
-                                        ds = gdal.Open(temp_mbtiles_path, gdal.GA_Update)
+                                    gdal.SetCacheMax(512 * 1024 * 1024)
+                                    gdal.Warp(
+                                        temp_tif_path,
+                                        raster_layer.source(),
+                                        format='GTiff',
+                                        outputBounds=bounds,
+                                        cutlineDSName=temp_mask_path,
+                                        cropToCutline=True,
+                                        dstSRS=raster_crs.authid() if raster_crs.isValid() else None,
+                                        warpOptions=['NUM_THREADS=ALL_CPUS'],
+                                        creationOptions=['COMPRESS=JPEG', 'JPEG_QUALITY=80', 'TILED=YES', 'NUM_THREADS=ALL_CPUS']
+                                    )
+
+                                    if os.path.exists(temp_tif_path):
+                                        ds = gdal.Open(temp_tif_path, gdal.GA_Update)
                                         if ds:
-                                            ds.BuildOverviews("NEAREST", [2, 4, 8, 16, 32])
+                                            ds.BuildOverviews("NEAREST", [2, 4, 8, 16])
                                             ds = None
-                                            
-                                        new_raster = QgsRasterLayer(temp_mbtiles_path, raster_layer.name(), "gdal")
+
+                                        new_raster = QgsRasterLayer(temp_tif_path, raster_layer.name(), "gdal")
                                         if new_raster.isValid():
                                             temp_project.addMapLayer(new_raster, False)
                                             basemap_group.insertLayer(0, new_raster)
                                             temp_project.removeMapLayer(raster_layer.id())
-                                            
-                                        try:
-                                            if os.path.exists(clipped_tif):
-                                                os.remove(clipped_tif)
-                                            if os.path.exists(temp_mask_path):
-                                                os.remove(temp_mask_path)
-                                        except Exception:
-                                            pass
+
+                                    try:
+                                        if os.path.exists(temp_mask_path):
+                                            os.remove(temp_mask_path)
+                                    except Exception:
+                                        pass
                                 except Exception as e:
-                                    print(f"Clip failed: {e}")
+                                    print(f"Fast clip failed: {e}")
                             break
 
             try:
