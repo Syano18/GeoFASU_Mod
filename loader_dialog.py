@@ -2,6 +2,7 @@
 # email: c.dacpano@psa.gov.ph
 
 import os
+import sys
 import re
 import shutil
 from pathlib import Path
@@ -30,13 +31,22 @@ from qgis.utils import iface
 
 from .style import apply_modern_style, setup_dialog_logo
 
-# QFieldSync
+# QFieldSync (supports embedded and external plugin installation)
+plugin_dir = os.path.dirname(__file__)
+if plugin_dir not in sys.path:
+    sys.path.insert(0, plugin_dir)
+
 try:
     from qfieldsync.core.cloud_converter import CloudConverter
     from qfieldsync.core.preferences import Preferences
     HAS_QFIELDSYNC = True
-except ImportError:
-    HAS_QFIELDSYNC = False
+except Exception:
+    try:
+        from .qfieldsync.core.cloud_converter import CloudConverter
+        from .qfieldsync.core.preferences import Preferences
+        HAS_QFIELDSYNC = True
+    except Exception:
+        HAS_QFIELDSYNC = False
 
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'loader_dialog.ui'))

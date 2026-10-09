@@ -39,7 +39,6 @@ from qgis.PyQt.QtNetwork import QNetworkReply
 
 from qfieldsync.core.cloud_api import CloudNetworkAccessManager
 from qfieldsync.core.cloud_project import CloudProject, ProjectFile, ProjectFileCheckout
-from qfieldsync.utils.file_utils import mkdir
 
 
 class CloudTransferrer(QObject):
@@ -96,10 +95,10 @@ class CloudTransferrer(QObject):
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
-        mkdir(self.temp_dir)
-        mkdir(self.temp_dir.joinpath("backup"))
-        mkdir(self.temp_dir.joinpath(FileTransfer.Type.UPLOAD.value))
-        mkdir(self.temp_dir.joinpath(FileTransfer.Type.DOWNLOAD.value))
+        self.temp_dir.mkdir()
+        self.temp_dir.joinpath("backup").mkdir()
+        self.temp_dir.joinpath(FileTransfer.Type.UPLOAD.value).mkdir()
+        self.temp_dir.joinpath(FileTransfer.Type.DOWNLOAD.value).mkdir()
 
         self.localized_datasets_upload_finished.connect(
             self._on_localized_datasets_upload_finished
@@ -188,7 +187,7 @@ class CloudTransferrer(QObject):
         self.throttled_uploader_for_localized_datasets = ThrottledFileTransferrer(
             self.network_manager,
             self.localized_datasets_project,
-            list(self._files_to_upload_for_localized_datasets.values()),
+            self._files_to_upload_for_localized_datasets.values(),
             FileTransfer.Type.UPLOAD,
             use_file_local_dir=True,
         )
@@ -529,7 +528,7 @@ class FileTransfer(QObject):
         if self.type == FileTransfer.Type.DOWNLOAD:
             if self.is_redirect:
                 reply = self.network_manager.get(
-                    self.last_redirect_url, str(self.fs_filename), True
+                    self.last_redirect_url, str(self.fs_filename)
                 )
             else:
                 params = {"version": self.version} if self.version else {}
@@ -537,7 +536,6 @@ class FileTransfer(QObject):
                     f"files/{self.cloud_project.id}/{self.filename}/",
                     local_filename=str(self.fs_filename),
                     params=params,
-                    skip_cache=True,
                 )
         elif self.type == FileTransfer.Type.UPLOAD:
             reply = self.network_manager.cloud_upload_files(
@@ -604,11 +602,8 @@ class FileTransfer(QObject):
                 )
         except Exception as err:
             self.error = err
-
-            # remove partially downloaded files
-            if self.type == FileTransfer.Type.DOWNLOAD:
-                if self.fs_filename.is_file():
-                    self.fs_filename.unlink()
+            if self.fs_filename.is_file():
+                self.fs_filename.unlink()
 
         self.finished.emit()
 

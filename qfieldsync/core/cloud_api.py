@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 import requests
+from PyQt5.QtNetwork import QSslPreSharedKeyAuthenticator
 from qgis.core import (
     Qgis,
     QgsApplication,
@@ -49,14 +50,11 @@ from qgis.PyQt.QtNetwork import (
     QHttpPart,
     QNetworkReply,
     QNetworkRequest,
-    QSslPreSharedKeyAuthenticator,
 )
 
 from qfieldsync.core.cloud_project import CloudProject
 from qfieldsync.core.preferences import Preferences
 from qfieldsync.utils.qt_utils import strip_html
-
-LOCALIZED_DATASETS_PROJECT_NAME = "shared_datasets"
 
 
 class CloudException(Exception):
@@ -392,7 +390,6 @@ class CloudNetworkAccessManager(QObject):
         uri: Union[str, List[str], QUrl],
         params: Dict[str, Any] = {},
         local_filename: str = None,
-        skip_cache: bool = False,
     ) -> QNetworkReply:
         """Issues a GET HTTP request"""
         url = self._prepare_uri(uri)
@@ -416,12 +413,6 @@ class CloudNetworkAccessManager(QObject):
             QNetworkRequest.RedirectPolicyAttribute,
             QNetworkRequest.NoLessSafeRedirectPolicy,
         )
-
-        if skip_cache:
-            request.setAttribute(
-                QNetworkRequest.CacheLoadControlAttribute, QNetworkRequest.AlwaysNetwork
-            )
-
         request.setHeader(QNetworkRequest.ContentTypeHeader, "application/json")
 
         if self._token:
@@ -444,19 +435,12 @@ class CloudNetworkAccessManager(QObject):
 
         return reply
 
-    def get(
-        self, url: QUrl, local_filename: str = None, skip_cache: bool = False
-    ) -> QNetworkReply:
+    def get(self, url: QUrl, local_filename: str = None) -> QNetworkReply:
         request = QNetworkRequest(url)
         request.setAttribute(
             QNetworkRequest.RedirectPolicyAttribute,
             QNetworkRequest.UserVerifiedRedirectPolicy,
         )
-
-        if skip_cache:
-            request.setAttribute(
-                QNetworkRequest.CacheLoadControlAttribute, QNetworkRequest.AlwaysNetwork
-            )
 
         with disable_nam_timeout(self._nam):
             reply = self._nam.get(request)
@@ -771,26 +755,20 @@ class CloudNetworkAccessManager(QObject):
         try:
             # Check if the project is already in the projects cache
             for project in self.projects_cache.projects:
-                if (
-                    project.name == LOCALIZED_DATASETS_PROJECT_NAME
-                    and project.owner == owner
-                ):
+                if project.name == "localized_datasets" and project.owner == owner:
                     return project
 
             # If not, refresh the projects cache and check again
             self.projects_cache.refresh_not_async()
             for project in self.projects_cache.projects:
-                if (
-                    project.name == LOCALIZED_DATASETS_PROJECT_NAME
-                    and project.owner == owner
-                ):
+                if project.name == "localized_datasets" and project.owner == owner:
                     return project
 
             # We're finally sure it's not present yet, create one
             reply = self.create_project(
-                name=LOCALIZED_DATASETS_PROJECT_NAME,
+                name="localized_datasets",
                 owner=owner,
-                description="",
+                description="Localized datasets",
                 private=True,
             )
             loop = QEventLoop()
@@ -799,10 +777,7 @@ class CloudNetworkAccessManager(QObject):
 
             self.projects_cache.refresh_not_async()
             for project in self.projects_cache.projects:
-                if (
-                    project.name == LOCALIZED_DATASETS_PROJECT_NAME
-                    and project.owner == owner
-                ):
+                if project.name == "localized_datasets" and project.owner == owner:
                     return project
 
         except Exception as err:
