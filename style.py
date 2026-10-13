@@ -199,6 +199,40 @@ QListWidget::item:selected {
     color: #1D4ED8;
     font-weight: 600;
 }
+
+/* Group Boxes */
+QGroupBox {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1E293B;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding-top: 14px;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-bottom: 10px;
+    background-color: #FFFFFF;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 4px;
+    background-color: #FFFFFF;
+    color: #2563EB;
+}
+
+/* Text Editors */
+QTextEdit, QPlainTextEdit {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #0F172A;
+}
 """
 
 def apply_modern_style(widget):

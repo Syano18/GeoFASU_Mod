@@ -8,6 +8,7 @@ from .GeoFASU_dialog import GeoFASUDialog          # Converter UI
 from .gpkg_to_excel_dialog import GpkgToExcelDialog
 from .loader_dialog import LoaderDialog          # Loader UI
 from .folder_creator_dialog import FolderCreatorDialog  # Folder Creator UI
+from .checker_dialog import CheckerDialog        # Checker UI
 from .updater import check_for_updates
 from . import resources_rc
 
@@ -19,6 +20,7 @@ class GeoFASU:
         self.gpkg_to_excel_dlg = None
         self.loader_dlg = None
         self.folder_creator_dlg = None
+        self.checker_dlg = None
         self.update_action = None
         self.menu = None
 
@@ -58,6 +60,13 @@ class GeoFASU:
         )
         self.gpkg_to_excel_action.triggered.connect(self.run_gpkg_to_excel)
 
+        self.checker_action = QAction(
+            QIcon(str(icons_path / "checker.png")),
+            "Checker",
+            self.iface.mainWindow()
+        )
+        self.checker_action.triggered.connect(self.run_checker)
+
         self.update_action = QAction(
             QIcon(str(icons_path / "update.png")),
             "Check for Updates...",
@@ -71,6 +80,7 @@ class GeoFASU:
         self.menu.addAction(self.converter_action)
         self.menu.addAction(self.loader_action)
         self.menu.addAction(self.gpkg_to_excel_action)
+        self.menu.addAction(self.checker_action)
         self.menu.addSeparator()
         self.menu.addAction(self.update_action)
 
@@ -113,3 +123,10 @@ class GeoFASU:
             self.loader_dlg = LoaderDialog()
         self.loader_dlg.show()
         self.loader_dlg.exec_()
+
+    def run_checker(self):
+        if not hasattr(self, 'checker_dlg') or not self.checker_dlg:
+            self.checker_dlg = CheckerDialog(self.iface)
+        self.checker_dlg.show()
+        self.checker_dlg.exec_()
+
