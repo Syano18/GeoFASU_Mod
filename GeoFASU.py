@@ -53,19 +53,19 @@ class GeoFASU:
         )
         self.loader_action.triggered.connect(self.run_loader)
 
-        self.gpkg_to_excel_action = QAction(
-            QIcon(str(icons_path / "gpkg_to_excel.png")),
-            "Convert geopackage to excel",
-            self.iface.mainWindow()
-        )
-        self.gpkg_to_excel_action.triggered.connect(self.run_gpkg_to_excel)
-
         self.checker_action = QAction(
             QIcon(str(icons_path / "checker.png")),
             "Checker",
             self.iface.mainWindow()
         )
         self.checker_action.triggered.connect(self.run_checker)
+
+        self.gpkg_to_excel_action = QAction(
+            QIcon(str(icons_path / "gpkg_to_excel.png")),
+            "Convert geopackage to excel",
+            self.iface.mainWindow()
+        )
+        self.gpkg_to_excel_action.triggered.connect(self.run_gpkg_to_excel)
 
         self.update_action = QAction(
             QIcon(str(icons_path / "update.png")),
@@ -79,8 +79,8 @@ class GeoFASU:
         self.menu.addSeparator()
         self.menu.addAction(self.converter_action)
         self.menu.addAction(self.loader_action)
-        self.menu.addAction(self.gpkg_to_excel_action)
         self.menu.addAction(self.checker_action)
+        self.menu.addAction(self.gpkg_to_excel_action)
         self.menu.addSeparator()
         self.menu.addAction(self.update_action)
 
@@ -112,12 +112,6 @@ class GeoFASU:
         self.converter_dlg.show()
         self.converter_dlg.exec_()
 
-    def run_gpkg_to_excel(self):
-        if not hasattr(self, 'gpkg_to_excel_dlg') or not self.gpkg_to_excel_dlg:
-            self.gpkg_to_excel_dlg = GpkgToExcelDialog()
-        self.gpkg_to_excel_dlg.show()
-        self.gpkg_to_excel_dlg.exec_()
-
     def run_loader(self):
         if not self.loader_dlg:
             self.loader_dlg = LoaderDialog()
@@ -129,4 +123,10 @@ class GeoFASU:
             self.checker_dlg = CheckerDialog(self.iface)
         self.checker_dlg.show()
         self.checker_dlg.exec_()
+
+    def run_gpkg_to_excel(self):
+        if not hasattr(self, 'gpkg_to_excel_dlg') or not self.gpkg_to_excel_dlg:
+            self.gpkg_to_excel_dlg = GpkgToExcelDialog()
+        self.gpkg_to_excel_dlg.show()
+        self.gpkg_to_excel_dlg.exec_()
 

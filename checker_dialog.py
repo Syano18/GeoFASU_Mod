@@ -5,6 +5,7 @@
 import os
 import re
 from pathlib import Path
+from collections import Counter
 
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
@@ -14,14 +15,12 @@ from qgis.core import (
     QgsVectorLayer,
     QgsFeature,
     QgsField,
-    QgsProviderRegistry,
     QgsWkbTypes,
     QgsMarkerSymbol,
     QgsFillSymbol,
     QgsLineSymbol,
     QgsSingleSymbolRenderer,
 )
-from qgis.gui import QgsFileWidget
 
 try:
     from .style import apply_modern_style, setup_dialog_logo
@@ -131,319 +130,307 @@ class CheckerDialog(QDialog, FORM_CLASS):
 
         self.closeButton.setProperty("secondary", True)
         self.progressBar.setValue(0)
-        self.comboxLayer.setPlaceholderText("-- Select Layer to Check --")
+        self.comboxSample.setPlaceholderText("-- Select Sample SSU Layer --")
+        self.comboxRef.setPlaceholderText("-- Select Reference SSU Layer --")
 
-        self.gpkgFileWidget.setStorageMode(QgsFileWidget.GetFile)
-        self.gpkgFileWidget.setFilter("GeoPackage (*.gpkg)")
+        # Initial population of project layers
+        self.populate_layers()
 
-        # Initial instruction in result box
-        self.resultText.setText(
-            "Instructions:\n"
-            "1. Choose a GeoPackage (.gpkg) file.\n"
-            "2. Select the layer to check (or check all vector layers).\n"
-            "3. Click 'Run Checker' to validate records.\n\n"
-            "Active Rules:\n"
-            "• BSN, HUSN, and HSN columns must NOT be Null.\n"
-            "• If Update Codes = 5: n_hhhead, n_hsn, and m_uc_ind must NOT be Null.\n\n"
-            "Any errors found will automatically be loaded as a new temporary layer."
-        )
+        # Keep dropdowns in sync if project layers change
+        QgsProject.instance().layersAdded.connect(self.populate_layers)
+        QgsProject.instance().layersRemoved.connect(self.populate_layers)
 
         # Signal connections
-        self.gpkgFileWidget.fileChanged.connect(self.populate_layer_list)
         self.runButton.clicked.connect(self.run_checker)
         self.closeButton.clicked.connect(self.close)
 
-    def populate_layer_list(self):
-        """Populates the layer dropdown from the selected GeoPackage file."""
-        self.comboxLayer.blockSignals(True)
-        self.comboxLayer.clear()
-        self.progressBar.setValue(0)
+    def showEvent(self, event):
+        """Refreshes layer list when dialog is shown."""
+        self.populate_layers()
+        super().showEvent(event)
 
-        gpkg_path = self.gpkgFileWidget.filePath().strip()
-        if not gpkg_path or not os.path.isfile(gpkg_path):
-            self.comboxLayer.blockSignals(False)
+    def populate_layers(self):
+        """Populates Sample SSU and Reference SSU dropdowns from vector layers in QGIS."""
+        self.comboxSample.blockSignals(True)
+        self.comboxRef.blockSignals(True)
+
+        prev_sample_id = self.comboxSample.currentData()
+        prev_ref_id = self.comboxRef.currentData()
+
+        self.comboxSample.clear()
+        self.comboxRef.clear()
+
+        # Get all valid vector layers in project
+        vector_layers = [
+            lyr
+            for lyr in QgsProject.instance().mapLayers().values()
+            if isinstance(lyr, QgsVectorLayer) and lyr.isValid()
+        ]
+
+        if not vector_layers:
+            self.comboxSample.setPlaceholderText("-- No Vector Layers in Project --")
+            self.comboxRef.setPlaceholderText("-- No Vector Layers in Project --")
+            self.comboxSample.blockSignals(False)
+            self.comboxRef.blockSignals(False)
             return
 
-        try:
-            sublayers = (
-                QgsProviderRegistry.instance()
-                .providerMetadata("ogr")
-                .querySublayers(gpkg_path)
-            )
-            valid_layers = []
-            for sub in sublayers:
-                sub_name = sub.name()
-                if sub_name.lower() not in ["layer_styles", "sqlite_sequence"]:
-                    valid_layers.append(sub_name)
+        self.comboxSample.setPlaceholderText("-- Select Sample SSU Layer --")
+        self.comboxRef.setPlaceholderText("-- Select Reference SSU Layer --")
 
-            if valid_layers:
-                if len(valid_layers) > 1:
-                    self.comboxLayer.addItem("[All Vector Layers]")
-                for layer_name in valid_layers:
-                    self.comboxLayer.addItem(layer_name)
-                self.comboxLayer.setCurrentIndex(0)
-                self.resultText.setText(
-                    f"Loaded GeoPackage: {os.path.basename(gpkg_path)}\n"
-                    f"Found {len(valid_layers)} layer(s): {', '.join(valid_layers)}\n"
-                    f"Ready to check."
-                )
-            else:
-                self.resultText.setText(
-                    f"Warning: No valid vector layers found in {os.path.basename(gpkg_path)}."
-                )
-        except Exception as e:
-            self.resultText.setText(f"Error reading GeoPackage layers: {e}")
+        sample_match_idx = -1
+        ref_match_idx = -1
 
-        self.comboxLayer.blockSignals(False)
+        for idx, lyr in enumerate(vector_layers):
+            self.comboxSample.addItem(lyr.name(), lyr.id())
+            self.comboxRef.addItem(lyr.name(), lyr.id())
+
+            lyr_name_lower = lyr.name().lower()
+
+            # Auto-detection for Sample SSU
+            if sample_match_idx == -1:
+                if (
+                    ("selected ssu" in lyr_name_lower or "sample" in lyr_name_lower)
+                    and "ref" not in lyr_name_lower
+                ):
+                    sample_match_idx = idx
+
+            # Auto-detection for Reference SSU
+            if ref_match_idx == -1:
+                if "ref" in lyr_name_lower:
+                    ref_match_idx = idx
+
+        # Restore previous selection if still available, otherwise use detected defaults
+        if prev_sample_id:
+            idx = self.comboxSample.findData(prev_sample_id)
+            if idx != -1:
+                self.comboxSample.setCurrentIndex(idx)
+            elif sample_match_idx != -1:
+                self.comboxSample.setCurrentIndex(sample_match_idx)
+        elif sample_match_idx != -1:
+            self.comboxSample.setCurrentIndex(sample_match_idx)
+
+        if prev_ref_id:
+            idx = self.comboxRef.findData(prev_ref_id)
+            if idx != -1:
+                self.comboxRef.setCurrentIndex(idx)
+            elif ref_match_idx != -1:
+                self.comboxRef.setCurrentIndex(ref_match_idx)
+        elif ref_match_idx != -1:
+            self.comboxRef.setCurrentIndex(ref_match_idx)
+
+        self.comboxSample.blockSignals(False)
+        self.comboxRef.blockSignals(False)
 
     def run_checker(self):
-        """Executes the validation check and creates a temporary layer for errors."""
-        gpkg_path = self.gpkgFileWidget.filePath().strip()
-        if not gpkg_path or not os.path.isfile(gpkg_path):
+        """Executes validation on Sample SSU and prepares for Reference SSU cross-validation."""
+        sample_layer_id = self.comboxSample.currentData()
+        sample_layer = QgsProject.instance().mapLayer(sample_layer_id) if sample_layer_id else None
+
+        if not sample_layer or not sample_layer.isValid():
             QMessageBox.warning(
                 self,
-                "Missing File",
-                "Please select a valid GeoPackage (.gpkg) file to check.",
+                "Missing Sample SSU",
+                "Please select a valid Sample SSU layer from the dropdown list.",
             )
             return
 
-        selected_layer_text = self.comboxLayer.currentText().strip()
-        if not selected_layer_text:
-            QMessageBox.warning(
-                self,
-                "No Layer Selected",
-                "Please select a layer from the dropdown list.",
-            )
-            return
+        ref_layer_id = self.comboxRef.currentData()
+        ref_layer = QgsProject.instance().mapLayer(ref_layer_id) if ref_layer_id else None
 
         self.runButton.setEnabled(False)
         self.progressBar.setValue(5)
-        self.resultText.clear()
         QCoreApplication.processEvents()
 
         try:
-            # Determine which layers to inspect
-            sublayers = (
-                QgsProviderRegistry.instance()
-                .providerMetadata("ogr")
-                .querySublayers(gpkg_path)
+            feature_count = sample_layer.featureCount()
+
+            # Resolve column names in Sample SSU
+            f_bsn = find_field_name(sample_layer, "BSN", ["bsn", "BS_No"])
+            f_husn = find_field_name(sample_layer, "HUSN", ["husn", "HU_SN"])
+            f_hsn = find_field_name(sample_layer, "HSN", ["hsn"])
+            f_uc = find_field_name(
+                sample_layer,
+                "Update Codes",
+                ["Update_Codes", "update codes", "update_code", "Update Code", "UC"],
             )
-            available_sublayers = [
-                sub.name()
-                for sub in sublayers
-                if sub.name().lower() not in ["layer_styles", "sqlite_sequence"]
-            ]
+            f_nhhhead = find_field_name(
+                sample_layer, "n_hhhead", ["n_hh_head", "nhhhead", "n_head", "new_hhhead"]
+            )
+            f_nhsn = find_field_name(sample_layer, "n_hsn", ["nhsn", "new_hsn"])
+            f_mucind = find_field_name(sample_layer, "m_uc_ind", ["mucind", "m_uc", "muc_ind"])
 
-            if selected_layer_text == "[All Vector Layers]":
-                target_layers = available_sublayers
-            else:
-                target_layers = [selected_layer_text]
+            # Check if required core columns are present
+            missing_core = []
+            if not f_bsn:
+                missing_core.append("BSN")
+            if not f_husn:
+                missing_core.append("HUSN")
+            if not f_hsn:
+                missing_core.append("HSN")
+            if not f_uc:
+                missing_core.append("Update Codes")
 
-            if not target_layers:
+            if missing_core:
                 QMessageBox.warning(
                     self,
-                    "No Layers Found",
-                    "No valid vector layers were found in the selected GeoPackage.",
+                    "Missing Columns",
+                    f"Sample SSU layer '{sample_layer.name()}' is missing required column(s):\n"
+                    f"{', '.join(missing_core)}.",
                 )
                 return
 
-            total_layers = len(target_layers)
-            overall_error_count = 0
-            created_temp_layers = []
-            log_messages = []
-            log_messages.append(f"GeoPackage: {os.path.basename(gpkg_path)}")
-            log_messages.append(f"Layers to check: {', '.join(target_layers)}")
-            log_messages.append("=" * 45)
+            self.progressBar.setValue(15)
+            QCoreApplication.processEvents()
 
-            for idx, lyr_name in enumerate(target_layers):
-                layer_uri = f"{gpkg_path}|layername={lyr_name}"
-                layer = QgsVectorLayer(layer_uri, lyr_name, "ogr")
-                if not layer.isValid():
-                    log_messages.append(f"Could not load layer '{lyr_name}' (Invalid).")
-                    continue
+            # Pass 1: Build frequency map for (BSN, HUSN, HSN) to detect duplicate entries
+            bsn_husn_hsn_counts = Counter()
+            for feat in sample_layer.getFeatures():
+                bsn_val = feat[f_bsn]
+                husn_val = feat[f_husn]
+                hsn_val = feat[f_hsn]
+                if (
+                    not is_null_or_empty(bsn_val)
+                    and not is_null_or_empty(husn_val)
+                    and not is_null_or_empty(hsn_val)
+                ):
+                    key = (str(bsn_val).strip(), str(husn_val).strip(), str(hsn_val).strip())
+                    bsn_husn_hsn_counts[key] += 1
 
-                feature_count = layer.featureCount()
-                log_messages.append(
-                    f"\nChecking layer: '{lyr_name}' ({feature_count} features)"
-                )
+            self.progressBar.setValue(30)
+            QCoreApplication.processEvents()
 
-                # Resolve column names
-                f_bsn = find_field_name(layer, "BSN", ["bsn", "BS_No"])
-                f_husn = find_field_name(layer, "HUSN", ["husn", "HU_SN"])
-                f_hsn = find_field_name(layer, "HSN", ["hsn"])
-                f_uc = find_field_name(
-                    layer,
-                    "Update Codes",
-                    ["Update_Codes", "update codes", "update_code", "Update Code", "UC"],
-                )
-                f_nhhhead = find_field_name(
-                    layer, "n_hhhead", ["n_hh_head", "nhhhead", "n_head", "new_hhhead"]
-                )
-                f_nhsn = find_field_name(layer, "n_hsn", ["nhsn", "new_hsn"])
-                f_mucind = find_field_name(layer, "m_uc_ind", ["mucind", "m_uc", "muc_ind"])
+            # Pass 2: Feature-level validation
+            layer_errors = []
+            processed_count = 0
 
-                # Check if core columns are present
-                missing_core = []
-                if not f_bsn:
-                    missing_core.append("BSN")
-                if not f_husn:
-                    missing_core.append("HUSN")
-                if not f_hsn:
-                    missing_core.append("HSN")
+            for feat in sample_layer.getFeatures():
+                reasons = []
 
-                if missing_core:
-                    warn_msg = (
-                        f"Layer '{lyr_name}' is missing columns: {', '.join(missing_core)}. "
-                        "Skipping standard serial number check for this layer."
-                    )
-                    log_messages.append(warn_msg)
-                    if len(target_layers) == 1:
-                        QMessageBox.warning(self, "Missing Columns", warn_msg)
-                        return
-                    continue
+                # 1. BSN, HUSN, HSN must not be null
+                if is_null_or_empty(feat[f_bsn]):
+                    reasons.append("BSN is Null")
+                if is_null_or_empty(feat[f_husn]):
+                    reasons.append("HUSN is Null")
+                if is_null_or_empty(feat[f_hsn]):
+                    reasons.append("HSN is Null")
 
-                # Inspect features
-                layer_errors = []
-                processed_count = 0
-                step_start_prog = int((idx / total_layers) * 80)
-                step_span = int(80 / total_layers)
+                # 2. Check for duplicate entries based on (BSN, HUSN, HSN)
+                if (
+                    not is_null_or_empty(feat[f_bsn])
+                    and not is_null_or_empty(feat[f_husn])
+                    and not is_null_or_empty(feat[f_hsn])
+                ):
+                    key = (str(feat[f_bsn]).strip(), str(feat[f_husn]).strip(), str(feat[f_hsn]).strip())
+                    dup_count = bsn_husn_hsn_counts.get(key, 0)
+                    if dup_count > 1:
+                        reasons.append(
+                            f"Duplicate entry: BSN={key[0]}, HUSN={key[1]}, HSN={key[2]} (appears {dup_count} times)"
+                        )
 
-                for feat in layer.getFeatures():
-                    reasons = []
-
-                    # 1. BSN, HUSN, HSN must not be null
-                    if is_null_or_empty(feat[f_bsn]):
-                        reasons.append("BSN is Null")
-                    if is_null_or_empty(feat[f_husn]):
-                        reasons.append("HUSN is Null")
-                    if is_null_or_empty(feat[f_hsn]):
-                        reasons.append("HSN is Null")
-
-                    # 2. If Update Codes is 5: n_hhhead, n_hsn, and m_uc_ind must not be null
-                    if f_uc:
-                        uc_val = feat[f_uc]
-                        if is_update_code_5(uc_val):
-                            if f_nhhhead and is_null_or_empty(feat[f_nhhhead]):
-                                reasons.append("Update Code 5: n_hhhead is Null")
-                            elif not f_nhhhead:
-                                reasons.append("Update Code 5: n_hhhead column not found")
-
-                            if f_nhsn and is_null_or_empty(feat[f_nhsn]):
-                                reasons.append("Update Code 5: n_hsn is Null")
-                            elif not f_nhsn:
-                                reasons.append("Update Code 5: n_hsn column not found")
-
-                            if f_mucind and is_null_or_empty(feat[f_mucind]):
-                                reasons.append("Update Code 5: m_uc_ind is Null")
-                            elif not f_mucind:
-                                reasons.append("Update Code 5: m_uc_ind column not found")
-
-                    if reasons:
-                        layer_errors.append((feat, "; ".join(reasons)))
-
-                    processed_count += 1
-                    if feature_count > 0 and processed_count % max(1, (feature_count // 20)) == 0:
-                        sub_prog = step_start_prog + int((processed_count / feature_count) * step_span)
-                        self.progressBar.setValue(min(sub_prog, 90))
-                        QCoreApplication.processEvents()
-
-                # Report for current layer
-                err_count = len(layer_errors)
-                overall_error_count += err_count
-
-                if err_count == 0:
-                    log_messages.append(
-                        f"  ✓ Passed: 0 errors detected out of {feature_count} features."
-                    )
+                # 3. Update Codes must not be null
+                if is_null_or_empty(feat[f_uc]):
+                    reasons.append("Update Codes is Null")
                 else:
-                    log_messages.append(
-                        f"  ✗ Errors detected: {err_count} of {feature_count} features."
-                    )
-                    # Create temporary memory layer for errors
-                    temp_name = f"Errors_{lyr_name}"
-                    crs_auth = layer.crs().authid()
-                    if layer.isSpatial():
-                        wkb_type_str = QgsWkbTypes.displayString(layer.wkbType())
-                        uri = f"{wkb_type_str}?crs={crs_auth}"
-                    else:
-                        uri = "none"
+                    # 4. If Update Codes is 5: n_hhhead, n_hsn, and m_uc_ind must not be null
+                    uc_val = feat[f_uc]
+                    if is_update_code_5(uc_val):
+                        if f_nhhhead and is_null_or_empty(feat[f_nhhhead]):
+                            reasons.append("Update Code 5: n_hhhead is Null")
+                        elif not f_nhhhead:
+                            reasons.append("Update Code 5: n_hhhead column not found")
 
-                    temp_layer = QgsVectorLayer(uri, temp_name, "memory")
-                    t_pr = temp_layer.dataProvider()
+                        if f_nhsn and is_null_or_empty(feat[f_nhsn]):
+                            reasons.append("Update Code 5: n_hsn is Null")
+                        elif not f_nhsn:
+                            reasons.append("Update Code 5: n_hsn column not found")
 
-                    # Copy original fields and add error details
-                    t_pr.addAttributes(layer.fields())
-                    try:
-                        from qgis.PyQt.QtCore import QMetaType
-                        err_field = QgsField("Validation_Errors", QMetaType.Type.QString)
-                    except Exception:
-                        err_field = QgsField("Validation_Errors", QVariant.String)
+                        if f_mucind and is_null_or_empty(feat[f_mucind]):
+                            reasons.append("Update Code 5: m_uc_ind is Null")
+                        elif not f_mucind:
+                            reasons.append("Update Code 5: m_uc_ind column not found")
 
-                    t_pr.addAttributes([err_field])
-                    temp_layer.updateFields()
+                if reasons:
+                    layer_errors.append((feat, "; ".join(reasons)))
 
-                    new_features = []
-                    for e_feat, e_reason in layer_errors:
-                        nf = QgsFeature(temp_layer.fields())
-                        if layer.isSpatial() and e_feat.hasGeometry():
-                            nf.setGeometry(e_feat.geometry())
-                        attrs = e_feat.attributes()
-                        attrs.append(e_reason)
-                        nf.setAttributes(attrs)
-                        new_features.append(nf)
+                processed_count += 1
+                if feature_count > 0 and processed_count % max(1, (feature_count // 20)) == 0:
+                    prog = 30 + int((processed_count / feature_count) * 60)
+                    self.progressBar.setValue(min(prog, 90))
+                    QCoreApplication.processEvents()
 
-                    t_pr.addFeatures(new_features)
-                    temp_layer.updateExtents()
+            err_count = len(layer_errors)
+            created_temp_layer = None
 
-                    # Apply prominent red symbology
-                    apply_error_symbology(temp_layer)
+            if err_count > 0:
+                # Create temporary memory layer for errors
+                temp_name = f"Errors_{sample_layer.name()}"
+                crs_auth = sample_layer.crs().authid()
+                if sample_layer.isSpatial():
+                    wkb_type_str = QgsWkbTypes.displayString(sample_layer.wkbType())
+                    uri = f"{wkb_type_str}?crs={crs_auth}"
+                else:
+                    uri = "none"
 
-                    # Add to QGIS Project
-                    QgsProject.instance().addMapLayer(temp_layer)
-                    created_temp_layers.append(temp_layer)
-                    log_messages.append(
-                        f"  → Created temporary layer: '{temp_name}' ({err_count} features)"
-                    )
+                temp_layer = QgsVectorLayer(uri, temp_name, "memory")
+                t_pr = temp_layer.dataProvider()
+
+                # Copy original fields and add Validation_Errors field
+                t_pr.addAttributes(sample_layer.fields())
+                try:
+                    from qgis.PyQt.QtCore import QMetaType
+                    err_field = QgsField("Validation_Errors", QMetaType.Type.QString)
+                except Exception:
+                    err_field = QgsField("Validation_Errors", QVariant.String)
+
+                t_pr.addAttributes([err_field])
+                temp_layer.updateFields()
+
+                new_features = []
+                for e_feat, e_reason in layer_errors:
+                    nf = QgsFeature(temp_layer.fields())
+                    if sample_layer.isSpatial() and e_feat.hasGeometry():
+                        nf.setGeometry(e_feat.geometry())
+                    attrs = e_feat.attributes()
+                    attrs.append(e_reason)
+                    nf.setAttributes(attrs)
+                    new_features.append(nf)
+
+                t_pr.addFeatures(new_features)
+                temp_layer.updateExtents()
+
+                # Apply prominent red symbology
+                apply_error_symbology(temp_layer)
+
+                # Add to QGIS Project
+                QgsProject.instance().addMapLayer(temp_layer)
+                created_temp_layer = temp_layer
 
             self.progressBar.setValue(100)
             QCoreApplication.processEvents()
 
             # Set active layer and zoom canvas if errors exist
-            if created_temp_layers and hasattr(self, "iface") and self.iface:
-                last_temp = created_temp_layers[-1]
-                self.iface.setActiveLayer(last_temp)
+            if created_temp_layer and hasattr(self, "iface") and self.iface:
+                self.iface.setActiveLayer(created_temp_layer)
                 if (
-                    last_temp.isSpatial()
-                    and last_temp.featureCount() > 0
+                    created_temp_layer.isSpatial()
+                    and created_temp_layer.featureCount() > 0
                     and self.iface.mapCanvas()
                 ):
-                    self.iface.mapCanvas().setExtent(last_temp.extent())
+                    self.iface.mapCanvas().setExtent(created_temp_layer.extent())
                     self.iface.mapCanvas().refresh()
 
-            # Final summary
-            log_messages.append("\n" + "=" * 45)
-            log_messages.append(
-                f"SUMMARY: Total Errors Found = {overall_error_count}"
-            )
-            if created_temp_layers:
-                layer_names_str = ", ".join([l.name() for l in created_temp_layers])
-                log_messages.append(
-                    f"Temporary Layer(s) Created in QGIS: {layer_names_str}"
-                )
-            self.resultText.setText("\n".join(log_messages))
-
-            if overall_error_count == 0:
+            if err_count == 0:
                 QMessageBox.information(
                     self,
                     "No Errors Found",
-                    "Checker completed successfully!\n\nAll records passed the validation checks.",
+                    f"Checker completed successfully!\n\nAll {feature_count} records in '{sample_layer.name()}' passed validation.",
                 )
             else:
                 QMessageBox.warning(
                     self,
                     "Validation Errors Found",
-                    f"Found {overall_error_count} error feature(s).\n\n"
-                    f"A new temporary layer has been created in QGIS with the error records.",
+                    f"Found {err_count} error feature(s) out of {feature_count} in '{sample_layer.name()}'.\n\n"
+                    f"A new temporary layer '{created_temp_layer.name()}' has been created in QGIS with the error records.",
                 )
 
         except Exception as e:
@@ -455,10 +442,8 @@ class CheckerDialog(QDialog, FORM_CLASS):
 
     def reset_fields(self):
         """Resets the input fields and progress bar."""
-        self.gpkgFileWidget.setFilePath("")
-        self.comboxLayer.clear()
         self.progressBar.setValue(0)
-        self.resultText.clear()
+        self.populate_layers()
 
     def closeEvent(self, event):
         """Clean close event."""

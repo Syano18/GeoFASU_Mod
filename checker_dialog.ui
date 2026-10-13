@@ -6,14 +6,14 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>480</width>
-    <height>600</height>
+    <width>440</width>
+    <height>520</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>450</width>
-    <height>550</height>
+    <width>420</width>
+    <height>480</height>
    </size>
   </property>
   <property name="windowTitle">
@@ -21,19 +21,19 @@
   </property>
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="spacing">
-    <number>10</number>
+    <number>12</number>
    </property>
    <property name="leftMargin">
     <number>20</number>
    </property>
    <property name="topMargin">
-    <number>16</number>
+    <number>18</number>
    </property>
    <property name="rightMargin">
     <number>20</number>
    </property>
    <property name="bottomMargin">
-    <number>16</number>
+    <number>18</number>
    </property>
    <item>
     <widget class="QLabel" name="iconLabel">
@@ -46,28 +46,24 @@
     </widget>
    </item>
    <item>
-    <widget class="QLabel" name="label_file">
+    <widget class="QLabel" name="label_sample">
      <property name="text">
-      <string>Select GeoPackage (.gpkg):</string>
+      <string>Select Sample SSU Layer:</string>
      </property>
     </widget>
    </item>
    <item>
-    <widget class="QgsFileWidget" name="gpkgFileWidget">
-     <property name="storageMode">
-      <enum>QgsFileWidget::GetFile</enum>
-     </property>
-    </widget>
+    <widget class="QComboBox" name="comboxSample"/>
    </item>
    <item>
-    <widget class="QLabel" name="label_layer">
+    <widget class="QLabel" name="label_ref">
      <property name="text">
-      <string>Select Layer to Check:</string>
+      <string>Select Reference SSU Layer:</string>
      </property>
     </widget>
    </item>
    <item>
-    <widget class="QComboBox" name="comboxLayer"/>
+    <widget class="QComboBox" name="comboxRef"/>
    </item>
    <item>
     <widget class="QGroupBox" name="groupBoxRules">
@@ -76,24 +72,24 @@
      </property>
      <layout class="QVBoxLayout" name="rulesLayout">
       <property name="spacing">
-       <number>6</number>
+       <number>8</number>
       </property>
       <property name="leftMargin">
-       <number>10</number>
+       <number>12</number>
       </property>
       <property name="topMargin">
-       <number>10</number>
+       <number>12</number>
       </property>
       <property name="rightMargin">
-       <number>10</number>
+       <number>12</number>
       </property>
       <property name="bottomMargin">
-       <number>10</number>
+       <number>12</number>
       </property>
       <item>
        <widget class="QLabel" name="rule1Label">
         <property name="text">
-         <string>• BSN, HUSN, and HSN columns must NOT be Null.</string>
+         <string>• BSN, HUSN, HSN, and Update Codes must NOT be Null.</string>
         </property>
        </widget>
       </item>
@@ -101,6 +97,13 @@
        <widget class="QLabel" name="rule2Label">
         <property name="text">
          <string>• If Update Codes = 5: n_hhhead, n_hsn, and m_uc_ind must NOT be Null.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="rule3Label">
+        <property name="text">
+         <string>• No duplicate entries based on (BSN, HUSN, HSN).</string>
         </property>
        </widget>
       </item>
@@ -115,32 +118,17 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="groupBoxResults">
-     <property name="title">
-      <string>Inspection Summary</string>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
      </property>
-     <layout class="QVBoxLayout" name="resultsLayout">
-      <property name="leftMargin">
-       <number>10</number>
-      </property>
-      <property name="topMargin">
-       <number>10</number>
-      </property>
-      <property name="rightMargin">
-       <number>10</number>
-      </property>
-      <property name="bottomMargin">
-       <number>10</number>
-      </property>
-      <item>
-       <widget class="QTextEdit" name="resultText">
-        <property name="readOnly">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>12</height>
+      </size>
+     </property>
+    </spacer>
    </item>
    <item>
     <widget class="QProgressBar" name="progressBar">
@@ -193,13 +181,6 @@
    </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>QgsFileWidget</class>
-   <extends>QWidget</extends>
-   <header>qgsfilewidget.h</header>
-  </customwidget>
- </customwidgets>
  <resources/>
  <connections/>
 </ui>
