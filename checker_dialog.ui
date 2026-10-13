@@ -6,14 +6,14 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>440</width>
-    <height>520</height>
+    <width>480</width>
+    <height>620</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>420</width>
-    <height>480</height>
+    <width>460</width>
+    <height>580</height>
    </size>
   </property>
   <property name="windowTitle">
@@ -27,7 +27,7 @@
     <number>20</number>
    </property>
    <property name="topMargin">
-    <number>18</number>
+    <number>16</number>
    </property>
    <property name="rightMargin">
     <number>20</number>
@@ -75,21 +75,24 @@
        <number>8</number>
       </property>
       <property name="leftMargin">
-       <number>12</number>
+       <number>14</number>
       </property>
       <property name="topMargin">
-       <number>12</number>
+       <number>14</number>
       </property>
       <property name="rightMargin">
-       <number>12</number>
+       <number>14</number>
       </property>
       <property name="bottomMargin">
-       <number>12</number>
+       <number>14</number>
       </property>
       <item>
        <widget class="QLabel" name="rule1Label">
         <property name="text">
          <string>• BSN, HUSN, HSN, and Update Codes must NOT be Null.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
         </property>
        </widget>
       </item>
@@ -98,6 +101,9 @@
         <property name="text">
          <string>• If Update Codes = 5: n_hhhead, n_hsn, and m_uc_ind must NOT be Null.</string>
         </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
        </widget>
       </item>
       <item>
@@ -105,12 +111,18 @@
         <property name="text">
          <string>• No duplicate entries based on (BSN, HUSN, HSN).</string>
         </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
        </widget>
       </item>
       <item>
        <widget class="QLabel" name="ruleActionLabel">
         <property name="text">
          <string>→ Features with errors will be exported to a new temporary layer.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
         </property>
        </widget>
       </item>
@@ -125,7 +137,7 @@
      <property name="sizeHint" stdset="0">
       <size>
        <width>20</width>
-       <height>12</height>
+       <height>16</height>
       </size>
      </property>
     </spacer>

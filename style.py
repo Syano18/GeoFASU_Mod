@@ -200,6 +200,43 @@ QListWidget::item:selected {
     font-weight: 600;
 }
 
+/* Modern Tab Widget */
+QTabWidget::pane {
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    background-color: #FFFFFF;
+    top: -1px;
+}
+
+QTabBar::tab {
+    background-color: #F1F5F9;
+    color: #475569;
+    border: 1px solid #CBD5E1;
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 8px 14px;
+    margin-right: 3px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+QTabBar::tab:hover {
+    background-color: #E2E8F0;
+    color: #1E293B;
+}
+
+QTabBar::tab:selected {
+    background-color: #FFFFFF;
+    color: #2563EB;
+    border-bottom: 2px solid #2563EB;
+    font-weight: bold;
+}
+
+QTabBar::tab:!selected {
+    margin-top: 2px;
+}
+
 /* Group Boxes */
 QGroupBox {
     font-size: 12px;
@@ -222,6 +259,11 @@ QGroupBox::title {
     padding: 0 4px;
     background-color: #FFFFFF;
     color: #2563EB;
+}
+
+QGroupBox QLabel {
+    padding: 3px 0px;
+    font-size: 12px;
 }
 
 /* Text Editors */
@@ -257,7 +299,7 @@ def setup_dialog_logo(dialog, max_width=250, max_height=130):
                 dialog.iconLabel.setPixmap(scaled)
                 dialog.iconLabel.setAlignment(Qt.AlignCenter)
                 # Ensure label height precisely wraps the scaled image plus buffer
-                target_height = scaled.height() + 12
+                target_height = scaled.height() + 16
                 dialog.iconLabel.setMinimumHeight(target_height)
                 dialog.iconLabel.setMaximumHeight(target_height)
                 dialog.iconLabel.setFixedHeight(target_height)
