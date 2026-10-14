@@ -7,13 +7,13 @@
     <x>0</x>
     <y>0</y>
     <width>440</width>
-    <height>520</height>
+    <height>340</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>420</width>
-    <height>480</height>
+    <width>360</width>
+    <height>0</height>
    </size>
   </property>
   <property name="windowTitle">
@@ -21,30 +21,20 @@
   </property>
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="spacing">
-    <number>12</number>
+    <number>8</number>
    </property>
    <property name="leftMargin">
-    <number>20</number>
+    <number>18</number>
    </property>
    <property name="topMargin">
-    <number>18</number>
+    <number>12</number>
    </property>
    <property name="rightMargin">
-    <number>20</number>
-   </property>
-   <property name="bottomMargin">
     <number>18</number>
    </property>
-   <item>
-    <widget class="QLabel" name="iconLabel">
-     <property name="text">
-      <string/>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
-    </widget>
-   </item>
+   <property name="bottomMargin">
+    <number>12</number>
+   </property>
    <item>
     <widget class="QLabel" name="label_2">
      <property name="text">
@@ -87,19 +77,6 @@
     </widget>
    </item>
    <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>8</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
-   <item>
     <widget class="QProgressBar" name="progressBar">
      <property name="value">
       <number>0</number>
@@ -124,6 +101,19 @@
       <string>Convert to GPKG</string>
      </property>
     </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>10</height>
+      </size>
+     </property>
+    </spacer>
    </item>
   </layout>
  </widget>

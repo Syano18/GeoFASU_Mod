@@ -208,28 +208,58 @@ QTabWidget::pane {
     top: -1px;
 }
 
-QTabBar::tab {
+/* Primary Top-Level Workflow Tabs (Preprocessing / Postprocessing) */
+QTabWidget#tabWidget > QTabBar::tab {
+    background-color: #E2E8F0;
+    color: #334155;
+    border: 1px solid #CBD5E1;
+    border-bottom: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    padding: 9px 24px;
+    margin-right: 4px;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+QTabWidget#tabWidget > QTabBar::tab:hover {
+    background-color: #CBD5E1;
+    color: #0F172A;
+}
+
+QTabWidget#tabWidget > QTabBar::tab:selected {
+    background-color: #FFFFFF;
+    color: #2563EB;
+    border-top: 3px solid #2563EB;
+    border-left: 1px solid #CBD5E1;
+    border-right: 1px solid #CBD5E1;
+    border-bottom: 2px solid #FFFFFF;
+}
+
+/* Secondary Module Sub-Tabs */
+QTabBar::tab, QTabWidget.subTabWidget > QTabBar::tab {
     background-color: #F1F5F9;
     color: #475569;
     border: 1px solid #CBD5E1;
     border-bottom: none;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
-    padding: 8px 14px;
+    padding: 7px 16px;
     margin-right: 3px;
     font-weight: 600;
     font-size: 12px;
 }
 
-QTabBar::tab:hover {
+QTabBar::tab:hover, QTabWidget.subTabWidget > QTabBar::tab:hover {
     background-color: #E2E8F0;
     color: #1E293B;
 }
 
-QTabBar::tab:selected {
-    background-color: #FFFFFF;
-    color: #2563EB;
-    border-bottom: 2px solid #2563EB;
+QTabBar::tab:selected, QTabWidget.subTabWidget > QTabBar::tab:selected {
+    background-color: #EFF6FF;
+    color: #1D4ED8;
+    border: 1px solid #93C5FD;
+    border-bottom: 2px solid #1D4ED8;
     font-weight: bold;
 }
 
