@@ -38,6 +38,7 @@ def _make_scroll(widget):
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
     scroll.setWidget(widget)
     return scroll
 
@@ -47,6 +48,8 @@ class PreprocessingDialog(QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        self.resize(560, 680)
+        self.setMinimumSize(520, 640)
         self.setWindowTitle("GeoFASU_Mod - Preprocessing")
         apply_modern_style(self)
         setup_dialog_logo(self, max_width=220, max_height=80)
@@ -84,6 +87,8 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
         super().__init__(parent)
         self.iface = iface
         self.setupUi(self)
+        self.resize(560, 680)
+        self.setMinimumSize(520, 640)
         self.setWindowTitle("GeoFASU_Mod - Postprocessing")
         apply_modern_style(self)
         setup_dialog_logo(self, max_width=220, max_height=80)
