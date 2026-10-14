@@ -2,8 +2,8 @@
 name=GeoFASU_Mod
 qgisMinimumVersion=3.36
 supportsQt6=True
-description="Modified for field data collection, unified tabbed studio with workflow groups, and quality checking"
-version=1.4.3
+description="Modified for field data collection, Preprocessing and Postprocessing submenus, and quality checking"
+version=1.4.4
 
 # tags are comma separated with spaces allowed
 tags=Generator, Convert, python, development, developer, QField, Android, Windows, mobile, smartphone, tablet, field, fieldwork, GPS, offline, qfieldsync, simple, collaborative, checker, validation

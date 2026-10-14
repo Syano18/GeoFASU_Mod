@@ -6,12 +6,12 @@ from qgis.PyQt.QtWidgets import QAction, QMenu
 from qgis.PyQt.QtGui import QIcon
 
 try:
-    from .main_dialog import GeoFASUMainDialog
+    from .main_dialog import PreprocessingDialog, PostprocessingDialog
     from .folder_creator_dialog import FolderCreatorDialog
     from .updater import check_for_updates
     from . import resources_rc
 except (ImportError, ValueError):
-    from main_dialog import GeoFASUMainDialog
+    from main_dialog import PreprocessingDialog, PostprocessingDialog
     from folder_creator_dialog import FolderCreatorDialog
     from updater import check_for_updates
     import resources_rc
@@ -21,13 +21,15 @@ class GeoFASU:
     def __init__(self, iface):
         self.iface = iface
         self.actions = []
-        self.main_dlg = None
         self.folder_creator_dlg = None
+        self.pre_dlg = None
+        self.post_dlg = None
         self.menu = None
+        self.preprocessing_menu = None
+        self.postprocessing_menu = None
         self.main_action = None
 
     def initGui(self):
-        # Path to icons folder
         icons_path = Path(__file__).parent / "icons"
 
         # Create custom top-level menu
@@ -41,15 +43,49 @@ class GeoFASU:
         )
         self.folder_creator_action.triggered.connect(self.run_folder_creator)
 
-        # Main Studio Action (Opens tabbed dialog)
-        self.main_action = QAction(
-            QIcon(str(icons_path / "icon.png")),
-            "GeoFASU_Mod Studio",
+        # Preprocessing Submenu
+        self.preprocessing_menu = QMenu("Preprocessing", self.menu)
+        self.preprocessing_menu.setIcon(QIcon(str(icons_path / "converter.png")))
+
+        self.converter_action = QAction(
+            QIcon(str(icons_path / "converter.png")),
+            "Convert Excel to GPKG",
             self.iface.mainWindow()
         )
-        self.main_action.triggered.connect(lambda: self.run_dialog(0))
-        self.actions.append(self.main_action)
+        self.converter_action.triggered.connect(lambda: self.run_preprocessing(0))
 
+        self.loader_action = QAction(
+            QIcon(str(icons_path / "loader.png")),
+            "Load and Generate QField",
+            self.iface.mainWindow()
+        )
+        self.loader_action.triggered.connect(lambda: self.run_preprocessing(1))
+
+        self.preprocessing_menu.addAction(self.converter_action)
+        self.preprocessing_menu.addAction(self.loader_action)
+
+        # Postprocessing Submenu
+        self.postprocessing_menu = QMenu("Postprocessing", self.menu)
+        self.postprocessing_menu.setIcon(QIcon(str(icons_path / "checker.png")))
+
+        self.checker_action = QAction(
+            QIcon(str(icons_path / "checker.png")),
+            "Data Quality Checker",
+            self.iface.mainWindow()
+        )
+        self.checker_action.triggered.connect(lambda: self.run_postprocessing(0))
+
+        self.gpkg_to_excel_action = QAction(
+            QIcon(str(icons_path / "gpkg_to_excel.png")),
+            "Convert GPKG to Excel",
+            self.iface.mainWindow()
+        )
+        self.gpkg_to_excel_action.triggered.connect(lambda: self.run_postprocessing(1))
+
+        self.postprocessing_menu.addAction(self.checker_action)
+        self.postprocessing_menu.addAction(self.gpkg_to_excel_action)
+
+        # Update action
         self.update_action = QAction(
             QIcon(str(icons_path / "update.png")),
             "Check for Updates...",
@@ -59,15 +95,22 @@ class GeoFASU:
             lambda: check_for_updates(self.iface.mainWindow(), silent_if_latest=False)
         )
 
-        # Populate menu (clean layout without redundant sub-items)
+        # Populate top-level menu
         self.menu.addAction(self.folder_creator_action)
         self.menu.addSeparator()
-        self.menu.addAction(self.main_action)
+        self.menu.addMenu(self.preprocessing_menu)
+        self.menu.addMenu(self.postprocessing_menu)
         self.menu.addSeparator()
         self.menu.addAction(self.update_action)
 
         # Add toolbar icon
         if hasattr(self.iface, 'addToolBarIcon'):
+            self.main_action = QAction(
+                QIcon(str(icons_path / "icon.png")),
+                "GeoFASU_Mod",
+                self.iface.mainWindow()
+            )
+            self.main_action.triggered.connect(lambda: self.run_preprocessing(0))
             self.iface.addToolBarIcon(self.main_action)
 
         # Add custom menu directly to QGIS top-level menu bar
@@ -97,27 +140,57 @@ class GeoFASU:
         self.folder_creator_dlg.raise_()
         self.folder_creator_dlg.activateWindow()
 
-    def run_dialog(self, module_target=0):
-        if not self.main_dlg:
-            self.main_dlg = GeoFASUMainDialog(self.iface)
+    def run_preprocessing(self, tab_index=0):
+        if not self.pre_dlg:
+            self.pre_dlg = PreprocessingDialog(self.iface.mainWindow())
 
-        self.main_dlg.set_active_module(module_target)
-        self.main_dlg.show()
-        self.main_dlg.raise_()
-        self.main_dlg.activateWindow()
+            # Cross-dialog directory sync
+            def sync_dir():
+                if self.post_dlg and hasattr(self.post_dlg, 'tab_gpkg_excel'):
+                    p = self.pre_dlg.tab_loader.fileWidget.filePath()
+                    if p:
+                        self.post_dlg.tab_gpkg_excel.fileWidget.setFilePath(p)
+
+            self.pre_dlg.tab_loader.fileWidget.fileChanged.connect(sync_dir)
+
+        self.pre_dlg.set_active_tab(tab_index)
+        self.pre_dlg.show()
+        self.pre_dlg.raise_()
+        self.pre_dlg.activateWindow()
+
+    def run_postprocessing(self, tab_index=0):
+        if not self.post_dlg:
+            self.post_dlg = PostprocessingDialog(self.iface, self.iface.mainWindow())
+
+            # Cross-dialog directory sync
+            if self.pre_dlg:
+                p = self.pre_dlg.tab_loader.fileWidget.filePath()
+                if p:
+                    self.post_dlg.tab_gpkg_excel.fileWidget.setFilePath(p)
+
+        self.post_dlg.set_active_tab(tab_index)
+        self.post_dlg.show()
+        self.post_dlg.raise_()
+        self.post_dlg.activateWindow()
 
     # Backward compatibility helpers
+    def run_dialog(self, target=0):
+        if target in (0, 1, 'converter', 'loader'):
+            self.run_preprocessing(target if isinstance(target, int) else (0 if target == 'converter' else 1))
+        else:
+            self.run_postprocessing(0 if target in (2, 'checker') else 1)
+
     def run_converter(self):
-        self.run_dialog('converter')
+        self.run_preprocessing(0)
 
     def run_loader(self):
-        self.run_dialog('loader')
+        self.run_preprocessing(1)
 
     def run_qfield(self):
-        self.run_dialog('qfield')
+        self.run_preprocessing(1)
 
     def run_checker(self):
-        self.run_dialog('checker')
+        self.run_postprocessing(0)
 
     def run_gpkg_to_excel(self):
-        self.run_dialog('gpkg_to_excel')
+        self.run_postprocessing(1)
