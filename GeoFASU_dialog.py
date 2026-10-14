@@ -20,7 +20,10 @@ from qgis.core import (
     QgsGeometry,
 )
 from qgis.gui import QgsFileWidget
-from .style import apply_modern_style, setup_dialog_logo
+try:
+    from .style import apply_modern_style, setup_dialog_logo
+except (ImportError, ValueError):
+    from style import apply_modern_style, setup_dialog_logo
 
 # Load the UI class from the .ui file
 FORM_CLASS, _ = uic.loadUiType(

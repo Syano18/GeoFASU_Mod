@@ -12,7 +12,10 @@ from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import QgsVectorLayer, QgsProviderRegistry
 import processing
 
-from .style import apply_modern_style, setup_dialog_logo
+try:
+    from .style import apply_modern_style, setup_dialog_logo
+except (ImportError, ValueError):
+    from style import apply_modern_style, setup_dialog_logo
 
 FORM_CLASS, _ = uic.loadUiType(
     os.path.join(os.path.dirname(__file__), "gpkg_to_excel_dialog.ui")

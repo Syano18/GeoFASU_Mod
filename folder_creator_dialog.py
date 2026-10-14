@@ -10,7 +10,10 @@ from qgis.PyQt.QtCore import QCoreApplication, QUrl
 from qgis.PyQt.QtGui import QDesktopServices
 from qgis.gui import QgsFileWidget
 
-from .style import apply_modern_style, setup_dialog_logo
+try:
+    from .style import apply_modern_style, setup_dialog_logo
+except (ImportError, ValueError):
+    from style import apply_modern_style, setup_dialog_logo
 
 FORM_CLASS, _ = uic.loadUiType(
     os.path.join(os.path.dirname(__file__), "folder_creator_dialog.ui")

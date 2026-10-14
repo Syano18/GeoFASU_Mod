@@ -5,9 +5,16 @@ from pathlib import Path
 from qgis.PyQt.QtWidgets import QAction, QMenu
 from qgis.PyQt.QtGui import QIcon
 
-from .main_dialog import GeoFASUMainDialog
-from .updater import check_for_updates
-from . import resources_rc
+try:
+    from .main_dialog import GeoFASUMainDialog
+    from .folder_creator_dialog import FolderCreatorDialog
+    from .updater import check_for_updates
+    from . import resources_rc
+except (ImportError, ValueError):
+    from main_dialog import GeoFASUMainDialog
+    from folder_creator_dialog import FolderCreatorDialog
+    from updater import check_for_updates
+    import resources_rc
 
 
 class GeoFASU:
@@ -15,6 +22,7 @@ class GeoFASU:
         self.iface = iface
         self.actions = []
         self.main_dlg = None
+        self.folder_creator_dlg = None
         self.menu = None
         self.main_action = None
 
@@ -25,57 +33,58 @@ class GeoFASU:
         # Create custom top-level menu
         self.menu = QMenu("&GeoFASU_Mod", self.iface.mainWindow())
 
-        # Main Studio Action
-        self.main_action = QAction(
-            QIcon(str(icons_path / "icon.png")),
-            "GeoFASU_Mod",
-            self.iface.mainWindow()
-        )
-        self.main_action.triggered.connect(lambda: self.run_dialog(0))
-        self.actions.append(self.main_action)
-
-        # Tab shortcut actions
+        # Standalone Folder Creator Action
         self.folder_creator_action = QAction(
             QIcon(str(icons_path / "folder.png")),
             "Create Folder Structure",
             self.iface.mainWindow()
         )
-        self.folder_creator_action.triggered.connect(lambda: self.run_dialog(0))
+        self.folder_creator_action.triggered.connect(self.run_folder_creator)
 
+        # Main Studio Action (Opens tabbed dialog)
+        self.main_action = QAction(
+            QIcon(str(icons_path / "icon.png")),
+            "GeoFASU_Mod Studio",
+            self.iface.mainWindow()
+        )
+        self.main_action.triggered.connect(lambda: self.run_dialog(0))
+        self.actions.append(self.main_action)
+
+        # Tab shortcut actions for the studio
         self.converter_action = QAction(
             QIcon(str(icons_path / "converter.png")),
             "Convert Excel to GPKG",
             self.iface.mainWindow()
         )
-        self.converter_action.triggered.connect(lambda: self.run_dialog(1))
+        self.converter_action.triggered.connect(lambda: self.run_dialog(0))
 
         self.loader_action = QAction(
             QIcon(str(icons_path / "loader.png")),
             "Load Layers",
             self.iface.mainWindow()
         )
-        self.loader_action.triggered.connect(lambda: self.run_dialog(2))
+        self.loader_action.triggered.connect(lambda: self.run_dialog(1))
 
         self.qfield_action = QAction(
             QIcon(str(icons_path / "qfield.png")),
             "Apply Style & Generate QField",
             self.iface.mainWindow()
         )
-        self.qfield_action.triggered.connect(lambda: self.run_dialog(3))
+        self.qfield_action.triggered.connect(lambda: self.run_dialog(2))
 
         self.checker_action = QAction(
             QIcon(str(icons_path / "checker.png")),
             "Data Quality Checker",
             self.iface.mainWindow()
         )
-        self.checker_action.triggered.connect(lambda: self.run_dialog(4))
+        self.checker_action.triggered.connect(lambda: self.run_dialog(3))
 
         self.gpkg_to_excel_action = QAction(
             QIcon(str(icons_path / "gpkg_to_excel.png")),
             "Convert GPKG to Excel",
             self.iface.mainWindow()
         )
-        self.gpkg_to_excel_action.triggered.connect(lambda: self.run_dialog(5))
+        self.gpkg_to_excel_action.triggered.connect(lambda: self.run_dialog(4))
 
         self.update_action = QAction(
             QIcon(str(icons_path / "update.png")),
@@ -87,9 +96,9 @@ class GeoFASU:
         )
 
         # Populate menu
-        self.menu.addAction(self.main_action)
-        self.menu.addSeparator()
         self.menu.addAction(self.folder_creator_action)
+        self.menu.addSeparator()
+        self.menu.addAction(self.main_action)
         self.menu.addAction(self.converter_action)
         self.menu.addAction(self.loader_action)
         self.menu.addAction(self.qfield_action)
@@ -122,6 +131,13 @@ class GeoFASU:
             self.menu.deleteLater()
             self.menu = None
 
+    def run_folder_creator(self):
+        if not self.folder_creator_dlg:
+            self.folder_creator_dlg = FolderCreatorDialog()
+        self.folder_creator_dlg.show()
+        self.folder_creator_dlg.raise_()
+        self.folder_creator_dlg.activateWindow()
+
     def run_dialog(self, tab_index=0):
         if not self.main_dlg:
             self.main_dlg = GeoFASUMainDialog(self.iface)
@@ -132,20 +148,17 @@ class GeoFASU:
         self.main_dlg.activateWindow()
 
     # Backward compatibility helpers
-    def run_folder_creator(self):
+    def run_converter(self):
         self.run_dialog(0)
 
-    def run_converter(self):
+    def run_loader(self):
         self.run_dialog(1)
 
-    def run_loader(self):
+    def run_qfield(self):
         self.run_dialog(2)
 
-    def run_qfield(self):
+    def run_checker(self):
         self.run_dialog(3)
 
-    def run_checker(self):
-        self.run_dialog(4)
-
     def run_gpkg_to_excel(self):
-        self.run_dialog(5)
+        self.run_dialog(4)

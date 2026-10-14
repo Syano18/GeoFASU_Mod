@@ -12,7 +12,6 @@ from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QWidget
 
 try:
     from .style import apply_modern_style, setup_dialog_logo
-    from .folder_creator_dialog import FolderCreatorDialog
     from .GeoFASU_dialog import GeoFASUDialog
     from .loader_dialog import LoaderDialog
     from .qfield_dialog import QFieldDialog
@@ -21,7 +20,6 @@ try:
     from .updater import check_for_updates
 except (ImportError, ValueError):
     from style import apply_modern_style, setup_dialog_logo
-    from folder_creator_dialog import FolderCreatorDialog
     from GeoFASU_dialog import GeoFASUDialog
     from loader_dialog import LoaderDialog
     from qfield_dialog import QFieldDialog
@@ -48,7 +46,6 @@ class GeoFASUMainDialog(QDialog, FORM_CLASS):
         self.btn_close.clicked.connect(self.close)
 
         # Instantiate module tabs
-        self.tab_folder = FolderCreatorDialog(parent=self)
         self.tab_converter = GeoFASUDialog(parent=self)
         self.tab_loader = LoaderDialog(parent=self)
         self.tab_qfield = QFieldDialog(parent=self)
@@ -56,7 +53,6 @@ class GeoFASUMainDialog(QDialog, FORM_CLASS):
         self.tab_gpkg_excel = GpkgToExcelDialog(parent=self)
 
         self.tabs = [
-            (self.tab_folder, "Folder Creator", "folder.png"),
             (self.tab_converter, "Excel to GPKG", "converter.png"),
             (self.tab_loader, "Load Layers", "loader.png"),
             (self.tab_qfield, "Style & QField", "qfield.png"),
