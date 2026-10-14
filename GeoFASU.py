@@ -43,7 +43,7 @@ class GeoFASU:
 
         # 2. Preprocessing Action (Directly opens Preprocessing dialog)
         self.preprocessing_action = QAction(
-            QIcon(str(icons_path / "converter.png")),
+            QIcon(str(icons_path / "preprocessing.png")),
             "Preprocessing",
             self.iface.mainWindow()
         )
@@ -51,7 +51,7 @@ class GeoFASU:
 
         # 3. Postprocessing Action (Directly opens Postprocessing dialog)
         self.postprocessing_action = QAction(
-            QIcon(str(icons_path / "checker.png")),
+            QIcon(str(icons_path / "postprocessing.png")),
             "Postprocessing",
             self.iface.mainWindow()
         )
