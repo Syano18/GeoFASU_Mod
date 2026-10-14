@@ -25,8 +25,6 @@ class GeoFASU:
         self.pre_dlg = None
         self.post_dlg = None
         self.menu = None
-        self.preprocessing_menu = None
-        self.postprocessing_menu = None
         self.main_action = None
 
     def initGui(self):
@@ -35,7 +33,7 @@ class GeoFASU:
         # Create custom top-level menu
         self.menu = QMenu("&GeoFASU_Mod", self.iface.mainWindow())
 
-        # Standalone Folder Creator Action
+        # 1. Standalone Folder Creator Action
         self.folder_creator_action = QAction(
             QIcon(str(icons_path / "folder.png")),
             "Create Folder Structure",
@@ -43,49 +41,23 @@ class GeoFASU:
         )
         self.folder_creator_action.triggered.connect(self.run_folder_creator)
 
-        # Preprocessing Submenu
-        self.preprocessing_menu = QMenu("Preprocessing", self.menu)
-        self.preprocessing_menu.setIcon(QIcon(str(icons_path / "converter.png")))
-
-        self.converter_action = QAction(
+        # 2. Preprocessing Action (Directly opens Preprocessing dialog)
+        self.preprocessing_action = QAction(
             QIcon(str(icons_path / "converter.png")),
-            "Convert Excel to GPKG",
+            "Preprocessing",
             self.iface.mainWindow()
         )
-        self.converter_action.triggered.connect(lambda: self.run_preprocessing(0))
+        self.preprocessing_action.triggered.connect(lambda: self.run_preprocessing(0))
 
-        self.loader_action = QAction(
-            QIcon(str(icons_path / "loader.png")),
-            "Load and Generate QField",
-            self.iface.mainWindow()
-        )
-        self.loader_action.triggered.connect(lambda: self.run_preprocessing(1))
-
-        self.preprocessing_menu.addAction(self.converter_action)
-        self.preprocessing_menu.addAction(self.loader_action)
-
-        # Postprocessing Submenu
-        self.postprocessing_menu = QMenu("Postprocessing", self.menu)
-        self.postprocessing_menu.setIcon(QIcon(str(icons_path / "checker.png")))
-
-        self.checker_action = QAction(
+        # 3. Postprocessing Action (Directly opens Postprocessing dialog)
+        self.postprocessing_action = QAction(
             QIcon(str(icons_path / "checker.png")),
-            "Data Quality Checker",
+            "Postprocessing",
             self.iface.mainWindow()
         )
-        self.checker_action.triggered.connect(lambda: self.run_postprocessing(0))
+        self.postprocessing_action.triggered.connect(lambda: self.run_postprocessing(0))
 
-        self.gpkg_to_excel_action = QAction(
-            QIcon(str(icons_path / "gpkg_to_excel.png")),
-            "Convert GPKG to Excel",
-            self.iface.mainWindow()
-        )
-        self.gpkg_to_excel_action.triggered.connect(lambda: self.run_postprocessing(1))
-
-        self.postprocessing_menu.addAction(self.checker_action)
-        self.postprocessing_menu.addAction(self.gpkg_to_excel_action)
-
-        # Update action
+        # 4. Check for Updates Action
         self.update_action = QAction(
             QIcon(str(icons_path / "update.png")),
             "Check for Updates...",
@@ -95,11 +67,11 @@ class GeoFASU:
             lambda: check_for_updates(self.iface.mainWindow(), silent_if_latest=False)
         )
 
-        # Populate top-level menu
+        # Populate top-level menu directly without nested submenus
         self.menu.addAction(self.folder_creator_action)
         self.menu.addSeparator()
-        self.menu.addMenu(self.preprocessing_menu)
-        self.menu.addMenu(self.postprocessing_menu)
+        self.menu.addAction(self.preprocessing_action)
+        self.menu.addAction(self.postprocessing_action)
         self.menu.addSeparator()
         self.menu.addAction(self.update_action)
 
