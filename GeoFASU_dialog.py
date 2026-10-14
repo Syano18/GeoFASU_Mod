@@ -42,6 +42,8 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         self.csvFileWidget.setStorageMode(QgsFileWidget.GetFile)
         self.csvFileWidget.setFilter("Excel Files (*.xlsx)")
         self.outputDirWidget.setStorageMode(QgsFileWidget.GetDirectory)
+        default_dir = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+        self.outputDirWidget.setFilePath(default_dir)
         self.typeofS.setFocus()
 
     def run_process(self):
@@ -223,7 +225,8 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
     def reset_fields(self):
         """Resets all input fields and the progress bar to their default state."""
         self.csvFileWidget.setFilePath("")
-        self.outputDirWidget.setFilePath("")
+        default_dir = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+        self.outputDirWidget.setFilePath(default_dir)
         self.typeofS.clear()
         self.progressBar.setValue(0)
 

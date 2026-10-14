@@ -15,6 +15,7 @@ try:
     from .GeoFASU_dialog import GeoFASUDialog
     from .loader_dialog import LoaderDialog
     from .checker_dialog import CheckerDialog
+    from .completeness_checker_dialog import CompletenessCheckerDialog
     from .gpkg_to_excel_dialog import GpkgToExcelDialog
     from .updater import check_for_updates
 except (ImportError, ValueError):
@@ -22,6 +23,7 @@ except (ImportError, ValueError):
     from GeoFASU_dialog import GeoFASUDialog
     from loader_dialog import LoaderDialog
     from checker_dialog import CheckerDialog
+    from completeness_checker_dialog import CompletenessCheckerDialog
     from gpkg_to_excel_dialog import GpkgToExcelDialog
     from updater import check_for_updates
 
@@ -87,8 +89,8 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
         super().__init__(parent)
         self.iface = iface
         self.setupUi(self)
-        self.resize(560, 680)
-        self.setMinimumSize(520, 640)
+        self.resize(600, 700)
+        self.setMinimumSize(560, 660)
         self.setWindowTitle("GeoFASU_Mod - Postprocessing")
         apply_modern_style(self)
         setup_dialog_logo(self, max_width=220, max_height=80)
@@ -102,10 +104,12 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
 
         # Modules
         self.tab_checker = CheckerDialog(iface=self.iface, parent=self)
+        self.tab_completeness = CompletenessCheckerDialog(iface=self.iface, parent=self)
         self.tab_gpkg_excel = GpkgToExcelDialog(parent=self)
 
         self.tabs = [
             (self.tab_checker, "Quality Checker", "checker.png"),
+            (self.tab_completeness, "Completeness Checker", "completeness.png"),
             (self.tab_gpkg_excel, "GPKG to Excel", "gpkg_to_excel.png"),
         ]
 
@@ -120,12 +124,16 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
     def on_tab_changed(self, index):
         if index == 0:
             self.tab_checker.populate_layers()
+        elif index == 1:
+            self.tab_completeness.populate_layers()
 
     def set_active_tab(self, index: int):
         if 0 <= index < self.tabWidget.count():
             self.tabWidget.setCurrentIndex(index)
             if index == 0:
                 self.tab_checker.populate_layers()
+            elif index == 1:
+                self.tab_completeness.populate_layers()
 
 
 # Backward compatibility alias

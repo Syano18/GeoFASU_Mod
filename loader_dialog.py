@@ -84,6 +84,12 @@ class LoaderDialog(QDialog, FORM_CLASS):
         self.aplqml.clicked.connect(self.apply_styles)
         self.genrate.clicked.connect(self.export_qfield_project)
 
+        # Default Reference Directory
+        default_ref = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+        self.fileWidget.setFilePath(default_ref)
+        if os.path.isdir(default_ref):
+            self.populate_nos_list()
+
     # ---------- Utilities ----------
     def _clean(self, s: str) -> str:
         """Windows-safe filename cleaner."""
@@ -130,10 +136,13 @@ class LoaderDialog(QDialog, FORM_CLASS):
         for w in (self.fileWidget, self.comboxNOS, self.comboxMun, self.comboxRep, self.loadbtn):
             w.setEnabled(True)
 
-        self.fileWidget.setFilePath("")
+        default_ref = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+        self.fileWidget.setFilePath(default_ref)
         self.comboxNOS.clear()
         self.comboxMun.clear()
         self.comboxRep.clear()
+        if os.path.isdir(default_ref):
+            self.populate_nos_list()
         self.progbar.setValue(0)
         self.aplqml.setEnabled(False)
         self.genrate.setEnabled(False)

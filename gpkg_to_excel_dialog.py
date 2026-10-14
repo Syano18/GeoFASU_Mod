@@ -37,6 +37,12 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
         self.fileWidget.fileChanged.connect(self.populate_nos_list)
         self.comboxNOS.currentIndexChanged.connect(self.update_mun_list)
 
+        # Default Reference Directory
+        default_ref = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+        self.fileWidget.setFilePath(default_ref)
+        if os.path.isdir(default_ref):
+            self.populate_nos_list()
+
     def populate_nos_list(self):
         self.comboxNOS.blockSignals(True)
         self.comboxMun.blockSignals(True)
@@ -251,9 +257,12 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
             self.runButton.setEnabled(True)
 
     def reset_fields(self):
-        self.fileWidget.setFilePath("")
+        default_ref = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+        self.fileWidget.setFilePath(default_ref)
         self.comboxNOS.clear()
         self.comboxMun.clear()
+        if os.path.isdir(default_ref):
+            self.populate_nos_list()
         self.progressBar.setValue(0)
 
     def closeEvent(self, event):

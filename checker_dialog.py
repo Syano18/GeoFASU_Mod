@@ -131,7 +131,6 @@ class CheckerDialog(QDialog, FORM_CLASS):
         self.closeButton.setProperty("secondary", True)
         self.progressBar.setValue(0)
         self.comboxSample.setPlaceholderText("-- Select Sample SSU Layer --")
-        self.comboxRef.setPlaceholderText("-- Select Reference SSU Layer --")
 
         # Initial population of project layers
         self.populate_layers()
@@ -150,15 +149,11 @@ class CheckerDialog(QDialog, FORM_CLASS):
         super().showEvent(event)
 
     def populate_layers(self):
-        """Populates Sample SSU and Reference SSU dropdowns from vector layers in QGIS."""
+        """Populates Sample SSU dropdown from vector layers in QGIS."""
         self.comboxSample.blockSignals(True)
-        self.comboxRef.blockSignals(True)
 
         prev_sample_id = self.comboxSample.currentData()
-        prev_ref_id = self.comboxRef.currentData()
-
         self.comboxSample.clear()
-        self.comboxRef.clear()
 
         # Get all valid vector layers in project
         vector_layers = [
@@ -169,20 +164,15 @@ class CheckerDialog(QDialog, FORM_CLASS):
 
         if not vector_layers:
             self.comboxSample.setPlaceholderText("-- No Vector Layers in Project --")
-            self.comboxRef.setPlaceholderText("-- No Vector Layers in Project --")
             self.comboxSample.blockSignals(False)
-            self.comboxRef.blockSignals(False)
             return
 
         self.comboxSample.setPlaceholderText("-- Select Sample SSU Layer --")
-        self.comboxRef.setPlaceholderText("-- Select Reference SSU Layer --")
 
         sample_match_idx = -1
-        ref_match_idx = -1
 
         for idx, lyr in enumerate(vector_layers):
             self.comboxSample.addItem(lyr.name(), lyr.id())
-            self.comboxRef.addItem(lyr.name(), lyr.id())
 
             lyr_name_lower = lyr.name().lower()
 
@@ -194,11 +184,6 @@ class CheckerDialog(QDialog, FORM_CLASS):
                 ):
                     sample_match_idx = idx
 
-            # Auto-detection for Reference SSU
-            if ref_match_idx == -1:
-                if "ref" in lyr_name_lower:
-                    ref_match_idx = idx
-
         # Restore previous selection if still available, otherwise use detected defaults
         if prev_sample_id:
             idx = self.comboxSample.findData(prev_sample_id)
@@ -209,20 +194,10 @@ class CheckerDialog(QDialog, FORM_CLASS):
         elif sample_match_idx != -1:
             self.comboxSample.setCurrentIndex(sample_match_idx)
 
-        if prev_ref_id:
-            idx = self.comboxRef.findData(prev_ref_id)
-            if idx != -1:
-                self.comboxRef.setCurrentIndex(idx)
-            elif ref_match_idx != -1:
-                self.comboxRef.setCurrentIndex(ref_match_idx)
-        elif ref_match_idx != -1:
-            self.comboxRef.setCurrentIndex(ref_match_idx)
-
         self.comboxSample.blockSignals(False)
-        self.comboxRef.blockSignals(False)
 
     def run_checker(self):
-        """Executes validation on Sample SSU and prepares for Reference SSU cross-validation."""
+        """Executes validation on Sample SSU."""
         sample_layer_id = self.comboxSample.currentData()
         sample_layer = QgsProject.instance().mapLayer(sample_layer_id) if sample_layer_id else None
 
@@ -233,9 +208,6 @@ class CheckerDialog(QDialog, FORM_CLASS):
                 "Please select a valid Sample SSU layer from the dropdown list.",
             )
             return
-
-        ref_layer_id = self.comboxRef.currentData()
-        ref_layer = QgsProject.instance().mapLayer(ref_layer_id) if ref_layer_id else None
 
         self.runButton.setEnabled(False)
         self.progressBar.setValue(5)

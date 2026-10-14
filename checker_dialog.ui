@@ -46,16 +46,6 @@
     <widget class="QComboBox" name="comboxSample"/>
    </item>
    <item>
-    <widget class="QLabel" name="label_ref">
-     <property name="text">
-      <string>Select Reference SSU Layer:</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QComboBox" name="comboxRef"/>
-   </item>
-   <item>
     <widget class="QGroupBox" name="rulesGroupBox">
      <property name="title">
       <string>Validation Rules Applied</string>
