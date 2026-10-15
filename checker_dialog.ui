@@ -79,7 +79,7 @@
       <item>
        <widget class="QLabel" name="rule2Label">
         <property name="text">
-         <string>• If Update Codes = 5: n_hhhead, n_hsn, and m_uc_ind must NOT be Null.</string>
+         <string>• Conditional column validations based on Update Codes (1 to 6).</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

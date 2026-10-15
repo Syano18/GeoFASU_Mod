@@ -155,3 +155,23 @@ class FolderCreatorDialog(QDialog, FORM_CLASS):
                 QDesktopServices.openUrl(QUrl.fromLocalFile(target_dir))
         else:
             QMessageBox.warning(self, "Not Found", f"Directory does not exist yet:\n{target_dir}")
+
+    def reset_fields(self):
+        """Resets all fields to their default state."""
+        default_base = r"C:\PSA-GIS\GeoFASU"
+        self.baseDirWidget.setFilePath(default_base)
+        self.provinceEdit.setText("Kalinga")
+        self.projectFolderEdit.setText("Project files")
+        self.progressBar.setValue(0)
+        self.openBtn.setEnabled(False)
+        self.update_preview()
+
+    def closeEvent(self, event):
+        """Clean close event, resets fields to default."""
+        self.reset_fields()
+        event.accept()
+
+    def reject(self):
+        """Clean reject event, resets fields to default."""
+        self.reset_fields()
+        super().reject()

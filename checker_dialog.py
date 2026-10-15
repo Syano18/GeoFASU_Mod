@@ -44,17 +44,18 @@ def is_null_or_empty(val):
     return s == "" or s.upper() in ["NULL", "NONE", "NAN"]
 
 
-def is_update_code_5(val):
-    """Determines if an Update Codes value represents 5 (as integer, float, or string)."""
+def to_int_or_none(val):
+    """Converts a value to int if possible (handles int, float strings like '6.0', '1', etc.)."""
     if is_null_or_empty(val):
-        return False
+        return None
     s = str(val).strip()
     try:
-        if float(s) == 5.0:
-            return True
+        f = float(s)
+        if f.is_integer():
+            return int(f)
     except (ValueError, TypeError):
         pass
-    return s == "5"
+    return None
 
 
 def find_field_name(layer, target_name, alternatives=None):
@@ -62,6 +63,8 @@ def find_field_name(layer, target_name, alternatives=None):
     Finds field in layer matching target_name or alternatives,
     case-insensitively and ignoring underscores/spaces.
     """
+    if not layer or not hasattr(layer, "fields"):
+        return None
     field_names = [f.name() for f in layer.fields()]
     if target_name in field_names:
         return target_name
@@ -148,11 +151,11 @@ class CheckerDialog(QDialog, FORM_CLASS):
         self.populate_layers()
         super().showEvent(event)
 
-    def populate_layers(self):
+    def populate_layers(self, reset_selection=False):
         """Populates Sample SSU dropdown from vector layers in QGIS."""
         self.comboxSample.blockSignals(True)
 
-        prev_sample_id = self.comboxSample.currentData()
+        prev_sample_id = None if reset_selection else self.comboxSample.currentData()
         self.comboxSample.clear()
 
         # Get all valid vector layers in project
@@ -184,8 +187,9 @@ class CheckerDialog(QDialog, FORM_CLASS):
                 ):
                     sample_match_idx = idx
 
-        # Restore previous selection if still available, otherwise use detected defaults
-        if prev_sample_id:
+        if reset_selection:
+            self.comboxSample.setCurrentIndex(-1)
+        elif prev_sample_id:
             idx = self.comboxSample.findData(prev_sample_id)
             if idx != -1:
                 self.comboxSample.setCurrentIndex(idx)
@@ -207,6 +211,7 @@ class CheckerDialog(QDialog, FORM_CLASS):
                 "Missing Sample SSU",
                 "Please select a valid Sample SSU layer from the dropdown list.",
             )
+            self.progressBar.setValue(0)
             return
 
         self.runButton.setEnabled(False)
@@ -228,8 +233,20 @@ class CheckerDialog(QDialog, FORM_CLASS):
             f_nhhhead = find_field_name(
                 sample_layer, "n_hhhead", ["n_hh_head", "nhhhead", "n_head", "new_hhhead"]
             )
+            f_uc2ind = find_field_name(
+                sample_layer, "UC_2_ind", ["uc_2_ind", "uc2ind", "UC_2_IND", "uc_2_indicator", "UC2_ind"]
+            )
             f_nhsn = find_field_name(sample_layer, "n_hsn", ["nhsn", "new_hsn"])
-            f_mucind = find_field_name(sample_layer, "m_uc_ind", ["mucind", "m_uc", "muc_ind"])
+            f_mucind = find_field_name(
+                sample_layer, "m_uc_ind", ["mucind", "m_uc_indicator", "muc_ind", "UC_m_ind"]
+            )
+            f_naddress = find_field_name(
+                sample_layer, "n_address", ["naddress", "new_address", "n_addr"]
+            )
+            f_uc6ind = find_field_name(
+                sample_layer, "uc_6_ind", ["uc6ind", "uc_6_indicator", "UC_6_IND", "uc_6"]
+            )
+            f_muc = find_field_name(sample_layer, "m_uc", ["muc", "M_UC", "m_uc_code"])
 
             # Check if required core columns are present
             missing_core = []
@@ -249,6 +266,7 @@ class CheckerDialog(QDialog, FORM_CLASS):
                     f"Sample SSU layer '{sample_layer.name()}' is missing required column(s):\n"
                     f"{', '.join(missing_core)}.",
                 )
+                self.progressBar.setValue(0)
                 return
 
             self.progressBar.setValue(15)
@@ -299,27 +317,68 @@ class CheckerDialog(QDialog, FORM_CLASS):
                             f"Duplicate entry: BSN={key[0]}, HUSN={key[1]}, HSN={key[2]} (appears {dup_count} times)"
                         )
 
-                # 3. Update Codes must not be null
+                # 3. Update Codes validation & 11 criteria
                 if is_null_or_empty(feat[f_uc]):
                     reasons.append("Update Codes is Null")
                 else:
-                    # 4. If Update Codes is 5: n_hhhead, n_hsn, and m_uc_ind must not be null
-                    uc_val = feat[f_uc]
-                    if is_update_code_5(uc_val):
-                        if f_nhhhead and is_null_or_empty(feat[f_nhhhead]):
-                            reasons.append("Update Code 5: n_hhhead is Null")
-                        elif not f_nhhhead:
-                            reasons.append("Update Code 5: n_hhhead column not found")
+                    uc = to_int_or_none(feat[f_uc])
+                    if uc is None:
+                        reasons.append(f"Update Codes '{feat[f_uc]}' is invalid")
+                    else:
+                        uc2 = to_int_or_none(feat[f_uc2ind]) if f_uc2ind else None
+                        mucind = to_int_or_none(feat[f_mucind]) if f_mucind else None
+                        uc6 = to_int_or_none(feat[f_uc6ind]) if f_uc6ind else None
+                        muc = to_int_or_none(feat[f_muc]) if f_muc else None
 
-                        if f_nhsn and is_null_or_empty(feat[f_nhsn]):
-                            reasons.append("Update Code 5: n_hsn is Null")
-                        elif not f_nhsn:
-                            reasons.append("Update Code 5: n_hsn column not found")
+                        def check_field_not_null(field_id, col_display_name, context_desc):
+                            if not field_id:
+                                reasons.append(f"{context_desc}: column '{col_display_name}' not found")
+                            elif is_null_or_empty(feat[field_id]):
+                                reasons.append(f"{context_desc}: {col_display_name} is Null")
 
-                        if f_mucind and is_null_or_empty(feat[f_mucind]):
-                            reasons.append("Update Code 5: m_uc_ind is Null")
-                        elif not f_mucind:
-                            reasons.append("Update Code 5: m_uc_ind column not found")
+                        # 1. 1,3,5 - n_hhhead column not null
+                        if uc in [1, 3, 5]:
+                            check_field_not_null(f_nhhhead, "n_hhhead", f"Update Code {uc}")
+
+                        # 2. 2 - UC_2_ind column not null
+                        if uc == 2:
+                            check_field_not_null(f_uc2ind, "UC_2_ind", "Update Code 2")
+
+                        # 3. 2 and UC_2_ind column is equal to 1 or 3 - n_hhhead column not null
+                        if uc == 2 and uc2 in [1, 3]:
+                            check_field_not_null(f_nhhhead, "n_hhhead", f"Update Code 2 (UC_2_ind={uc2})")
+
+                        # 4. 3,5 - n_hsn column not null
+                        if uc in [3, 5]:
+                            check_field_not_null(f_nhsn, "n_hsn", f"Update Code {uc}")
+
+                        # 5. 1,5 - m_uc_ind column not null
+                        if uc in [1, 5]:
+                            check_field_not_null(f_mucind, "m_uc_ind", f"Update Code {uc}")
+
+                        # 6. 1,5 and m_uc_ind column is equal to 2 - n_address column not null
+                        if uc in [1, 5] and mucind == 2:
+                            check_field_not_null(f_naddress, "n_address", f"Update Code {uc} (m_uc_ind=2)")
+
+                        # 7. 2 and UC_2_ind column = 2 or 3 - n_address column not null
+                        if uc == 2 and uc2 in [2, 3]:
+                            check_field_not_null(f_naddress, "n_address", f"Update Code 2 (UC_2_ind={uc2})")
+
+                        # 8. 6 - uc_6_ind column not null
+                        if uc == 6:
+                            check_field_not_null(f_uc6ind, "uc_6_ind", "Update Code 6")
+
+                        # 9. 6 and uc_6_ind column = 1 - n_hhhead column not null
+                        if uc == 6 and uc6 == 1:
+                            check_field_not_null(f_nhhhead, "n_hhhead", "Update Code 6 (uc_6_ind=1)")
+
+                        # 10. 2 and UC_2_ind column = 2 - m_uc column not null
+                        if uc == 2 and uc2 == 2:
+                            check_field_not_null(f_muc, "m_uc", "Update Code 2 (UC_2_ind=2)")
+
+                        # 11. 2 and UC_2_ind column = 2 and m_uc = 2 - n_hhhead column not null
+                        if uc == 2 and uc2 == 2 and muc == 2:
+                            check_field_not_null(f_nhhhead, "n_hhhead", "Update Code 2 (UC_2_ind=2, m_uc=2)")
 
                 if reasons:
                     layer_errors.append((feat, "; ".join(reasons)))
@@ -397,6 +456,7 @@ class CheckerDialog(QDialog, FORM_CLASS):
                     "No Errors Found",
                     f"Checker completed successfully!\n\nAll {feature_count} records in '{sample_layer.name()}' passed validation.",
                 )
+                self.progressBar.setValue(0)
             else:
                 QMessageBox.warning(
                     self,
@@ -404,20 +464,29 @@ class CheckerDialog(QDialog, FORM_CLASS):
                     f"Found {err_count} error feature(s) out of {feature_count} in '{sample_layer.name()}'.\n\n"
                     f"A new temporary layer '{created_temp_layer.name()}' has been created in QGIS with the error records.",
                 )
+                self.progressBar.setValue(0)
 
         except Exception as e:
             QMessageBox.critical(
                 self, "Unexpected Error", f"An error occurred during checking:\n{e}"
             )
+            self.progressBar.setValue(0)
         finally:
             self.runButton.setEnabled(True)
+            self.progressBar.setValue(0)
 
     def reset_fields(self):
-        """Resets the input fields and progress bar."""
+        """Resets the input fields and progress bar to default values."""
         self.progressBar.setValue(0)
-        self.populate_layers()
+        self.runButton.setEnabled(True)
+        self.populate_layers(reset_selection=True)
 
     def closeEvent(self, event):
-        """Clean close event."""
-        self.progressBar.setValue(0)
+        """Clean close event, resets fields to default."""
+        self.reset_fields()
         event.accept()
+
+    def reject(self):
+        """Clean reject event, resets fields to default."""
+        self.reset_fields()
+        super().reject()

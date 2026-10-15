@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>500</width>
-    <height>460</height>
+    <height>500</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -21,19 +21,19 @@
   </property>
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="spacing">
-    <number>5</number>
+    <number>4</number>
    </property>
    <property name="leftMargin">
     <number>16</number>
    </property>
    <property name="topMargin">
-    <number>6</number>
+    <number>4</number>
    </property>
    <property name="rightMargin">
     <number>16</number>
    </property>
    <property name="bottomMargin">
-    <number>6</number>
+    <number>4</number>
    </property>
    <item>
     <widget class="QLabel" name="label_sample">
@@ -56,6 +56,20 @@
     <widget class="QComboBox" name="comboxRef"/>
    </item>
    <item>
+    <widget class="QLabel" name="label_out">
+     <property name="text">
+      <string>Output Folder:</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QgsFileWidget" name="outputDirWidget">
+     <property name="storageMode">
+      <enum>QgsFileWidget::GetDirectory</enum>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QGroupBox" name="rulesGroupBox">
      <property name="title">
       <string>Completeness Rules</string>
@@ -68,13 +82,13 @@
        <number>10</number>
       </property>
       <property name="topMargin">
-       <number>6</number>
+       <number>5</number>
       </property>
       <property name="rightMargin">
        <number>10</number>
       </property>
       <property name="bottomMargin">
-       <number>6</number>
+       <number>5</number>
       </property>
       <item>
        <widget class="QLabel" name="rule1">
@@ -94,6 +108,13 @@
        <widget class="QLabel" name="rule3">
         <property name="text">
          <string>→ Counts must be equal to PASS and enable Update SSU List.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="rule4">
+        <property name="text">
+         <string>• Pre-Save: All records with Selected_SSU = 1 must have Update Codes.</string>
         </property>
        </widget>
       </item>
@@ -152,7 +173,7 @@
      <property name="maximumSize">
       <size>
        <width>16777215</width>
-       <height>95</height>
+       <height>75</height>
       </size>
      </property>
      <property name="readOnly">
@@ -172,6 +193,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>QgsFileWidget</class>
+   <extends>QWidget</extends>
+   <header>qgsfilewidget.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

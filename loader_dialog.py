@@ -148,9 +148,17 @@ class LoaderDialog(QDialog, FORM_CLASS):
         self.genrate.setEnabled(False)
         self.load_successful = False
 
+    def reset_fields(self):
+        """Standard alias for reset_all."""
+        self.reset_all()
+
     def closeEvent(self, event):
         self.reset_all()
         event.accept()
+
+    def reject(self):
+        self.reset_all()
+        super().reject()
 
     def get_reference_layer(self, layer_name: str):
         root = QgsProject.instance().layerTreeRoot()

@@ -229,8 +229,14 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         self.outputDirWidget.setFilePath(default_dir)
         self.typeofS.clear()
         self.progressBar.setValue(0)
+        self.runButton.setEnabled(True)
 
     def closeEvent(self, event):
         """Ensures fields are reset when the dialog is closed."""
         self.reset_fields()
         event.accept()
+
+    def reject(self):
+        """Ensures fields are reset when the dialog is dismissed."""
+        self.reset_fields()
+        super().reject()

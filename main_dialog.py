@@ -82,6 +82,27 @@ class PreprocessingDialog(QDialog, FORM_CLASS):
         if 0 <= index < self.tabWidget.count():
             self.tabWidget.setCurrentIndex(index)
 
+    def reset_all_modules(self):
+        """Resets all fields in all preprocessing modules to their default values."""
+        if hasattr(self, 'tab_converter') and hasattr(self.tab_converter, 'reset_fields'):
+            self.tab_converter.reset_fields()
+        if hasattr(self, 'tab_loader'):
+            if hasattr(self.tab_loader, 'reset_fields'):
+                self.tab_loader.reset_fields()
+            elif hasattr(self.tab_loader, 'reset_all'):
+                self.tab_loader.reset_all()
+        self.set_active_tab(0)
+
+    def closeEvent(self, event):
+        """Resets all fields in all modules when the dialog is closed."""
+        self.reset_all_modules()
+        event.accept()
+
+    def reject(self):
+        """Resets all fields in all modules when the dialog is dismissed."""
+        self.reset_all_modules()
+        super().reject()
+
 
 class PostprocessingDialog(QDialog, FORM_CLASS):
     """Postprocessing workflow dialog containing Quality Checker and GPKG to Excel."""
@@ -89,8 +110,8 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
         super().__init__(parent)
         self.iface = iface
         self.setupUi(self)
-        self.resize(600, 700)
-        self.setMinimumSize(560, 660)
+        self.resize(600, 740)
+        self.setMinimumSize(560, 680)
         self.setWindowTitle("GeoFASU_Mod - Postprocessing")
         apply_modern_style(self)
         setup_dialog_logo(self, max_width=220, max_height=80)
@@ -134,6 +155,26 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
                 self.tab_checker.populate_layers()
             elif index == 1:
                 self.tab_completeness.populate_layers()
+
+    def reset_all_modules(self):
+        """Resets all fields in all postprocessing modules to their default values."""
+        if hasattr(self, 'tab_checker') and hasattr(self.tab_checker, 'reset_fields'):
+            self.tab_checker.reset_fields()
+        if hasattr(self, 'tab_completeness') and hasattr(self.tab_completeness, 'reset_fields'):
+            self.tab_completeness.reset_fields()
+        if hasattr(self, 'tab_gpkg_excel') and hasattr(self.tab_gpkg_excel, 'reset_fields'):
+            self.tab_gpkg_excel.reset_fields()
+        self.set_active_tab(0)
+
+    def closeEvent(self, event):
+        """Resets all fields in all modules when the dialog is closed."""
+        self.reset_all_modules()
+        event.accept()
+
+    def reject(self):
+        """Resets all fields in all modules when the dialog is dismissed."""
+        self.reset_all_modules()
+        super().reject()
 
 
 # Backward compatibility alias
