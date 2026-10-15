@@ -41,9 +41,13 @@ class CloudConverter(QObject):
         self,
         project: QgsProject,
         export_dirname: str,
+        open_project_after_convert: bool = False,
+        *args,
+        **kwargs,
     ):
         super(CloudConverter, self).__init__(parent=None)
         self.project = project
+        self.open_project_after_convert = open_project_after_convert
         self.__layers = list()
 
         # elipsis workaround
@@ -57,20 +61,34 @@ class CloudConverter(QObject):
         """
 
         original_project_path = self.project.fileName()
-        project_path = self.export_dirname.joinpath(
-            f"{self.project.baseName()}_cloud.qgs"
-        )
-        backup_project_path = make_temp_qgis_file(self.project)
+        project_name = self.project.baseName() or "project"
+        is_temp_project = (self.project != QgsProject.instance())
+
+        if is_temp_project:
+            project_path = self.export_dirname.joinpath(f"{project_name}.qgs")
+            backup_project_path = None
+        else:
+            project_path = self.export_dirname.joinpath(f"{project_name}_cloud.qgs")
+            backup_project_path = make_temp_qgis_file(self.project)
+
         is_converted = False
 
         try:
             if not self.export_dirname.exists():
                 self.export_dirname.mkdir(parents=True, exist_ok=True)
 
-            if get_qgis_files_within_dir(self.export_dirname):
-                raise Exception(
-                    self.tr("The destination folder already contains a project file")
-                )
+            existing_projects = get_qgis_files_within_dir(self.export_dirname)
+            if existing_projects:
+                if is_temp_project:
+                    for ep in existing_projects:
+                        try:
+                            ep.unlink()
+                        except Exception:
+                            pass
+                else:
+                    raise Exception(
+                        self.tr("The destination folder already contains a project file")
+                    )
 
             self.total_progress_updated.emit(0, 100, self.trUtf8("Converting project…"))
             self.__layers = list(self.project.mapLayers().values())
@@ -147,23 +165,26 @@ class CloudConverter(QObject):
                     attachment_dir,
                 )
 
-            title = self.project.title()
-            title_suffix = self.tr("(QFieldCloud)")
-            if not title.endswith(title_suffix):
-                self.project.setTitle("{} {}".format(title, title_suffix))
+            if not is_temp_project:
+                title = self.project.title()
+                title_suffix = self.tr("(QFieldCloud)")
+                if not title.endswith(title_suffix):
+                    self.project.setTitle("{} {}".format(title, title_suffix))
             # Now we have a project state which can be saved as cloud project
             self.project.write(str(project_path))
             is_converted = True
         finally:
             # We need to let the app handle events before loading the next project or QGIS will crash with rasters
             QCoreApplication.processEvents()
-            self.project.clear()
+            if is_temp_project:
+                self.project.clear()
             QCoreApplication.processEvents()
 
-            # TODO whatcha gonna do if QgsProject::read()/write() fails
             if is_converted:
-                iface.addProject(str(project_path))
+                if getattr(self, "open_project_after_convert", False) and iface is not None:
+                    iface.addProject(str(project_path))
             else:
-                open_project(original_project_path, backup_project_path)
+                if backup_project_path and not is_temp_project:
+                    open_project(original_project_path, backup_project_path)
 
         self.total_progress_updated.emit(100, 100, self.tr("Finished"))

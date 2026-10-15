@@ -1298,8 +1298,11 @@ class LayerSource:
             for file_to_copy in files_to_copy:
                 source_path, file_name = os.path.split(file_to_copy)
                 dest_file = os.path.join(target_path, file_name)
+                src = os.path.join(source_path, file_name)
+                if os.path.abspath(src) == os.path.abspath(dest_file):
+                    continue
                 if keep_existent is False or not os.path.isfile(dest_file):
-                    shutil.copyfile(os.path.join(source_path, file_name), dest_file)
+                    shutil.copyfile(src, dest_file)
 
             source_path, file_name = os.path.split(self.filename)
             new_source = ""
@@ -1364,8 +1367,10 @@ class LayerSource:
         ):
             source_path, file_name = os.path.split(file_path)
             dest_file = os.path.join(target_path, file_name)
-            if not os.path.isfile(dest_file):
-                shutil.copyfile(os.path.join(source_path, file_name), dest_file)
+            src = os.path.join(source_path, file_name)
+            if os.path.abspath(src) != os.path.abspath(dest_file):
+                if not os.path.isfile(dest_file):
+                    shutil.copyfile(src, dest_file)
 
             if self.provider_metadata is not None:
                 metadata = self.metadata

@@ -40,6 +40,14 @@ plugin_dir = os.path.dirname(__file__)
 if plugin_dir not in sys.path:
     sys.path.insert(0, plugin_dir)
 
+import importlib
+for mod_name in ["libqfieldsync.layer", "libqfieldsync.utils.qgis", "qfieldsync.core.cloud_converter"]:
+    if mod_name in sys.modules:
+        try:
+            importlib.reload(sys.modules[mod_name])
+        except Exception:
+            pass
+
 try:
     from qfieldsync.core.cloud_converter import CloudConverter
     from qfieldsync.core.preferences import Preferences
@@ -292,21 +300,44 @@ class LoaderDialog(QDialog, FORM_CLASS):
             self.progbar.setValue(25)
             QCoreApplication.processEvents()
 
-            # 1. Base Layer (Barangay Boundary)
-            base_layers_dir = os.path.join(self.fileWidget.filePath(), 'Base Layers')
+            # 1. Base Layer (Barangay Boundary for mun)
+            base_layers_dir = os.path.join(self.fileWidget.filePath().strip(), 'Base Layers')
             if not os.path.isdir(base_layers_dir):
-                self.show_error("Base Layers folder does not exist.")
+                self.show_error(f"Base Layers folder does not exist:\n{base_layers_dir}")
                 return
 
-            bgy_files = [f for f in os.listdir(base_layers_dir) if f.endswith('.shp') or f.endswith('.gpkg')]
-            if not bgy_files:
-                self.show_error("No Barangay Boundary shapefile or geopackage found in Base Layers.")
+            base_candidates = [
+                f"{mun}.gpkg",
+                f"{mun}.shp",
+                f"{mun}_bdry.gpkg",
+                f"{mun}_bdry.shp",
+            ]
+            base_layer_path = None
+            for cand in base_candidates:
+                p = os.path.join(base_layers_dir, cand)
+                if os.path.exists(p):
+                    base_layer_path = p
+                    break
+
+            if not base_layer_path and os.path.isdir(base_layers_dir):
+                actual_base = {f.lower(): f for f in os.listdir(base_layers_dir)}
+                for cand in base_candidates:
+                    if cand.lower() in actual_base:
+                        base_layer_path = os.path.join(base_layers_dir, actual_base[cand.lower()])
+                        break
+
+            if not base_layer_path and os.path.isdir(base_layers_dir):
+                bgy_files = [f for f in os.listdir(base_layers_dir) if f.endswith('.shp') or f.endswith('.gpkg')]
+                if bgy_files:
+                    base_layer_path = os.path.join(base_layers_dir, bgy_files[0])
+
+            if not base_layer_path or not os.path.exists(base_layer_path):
+                self.show_error(f"No Barangay Boundary file found in Base Layers for: {mun}")
                 return
 
-            bgy_path = os.path.join(base_layers_dir, bgy_files[0])
-            bgy_layer = QgsVectorLayer(bgy_path, "Bgy Bdry.", "ogr")
+            bgy_layer = QgsVectorLayer(base_layer_path, "Bgy Bdry.", "ogr")
             if not bgy_layer.isValid():
-                self.show_error(f"Failed to load Barangay Boundary layer: {bgy_path}")
+                self.show_error(f"Failed to load Barangay Boundary layer: {base_layer_path}")
                 return
             QgsProject.instance().addMapLayer(bgy_layer, False)
             groups['Base Layer'].addLayer(bgy_layer)
@@ -314,40 +345,65 @@ class LoaderDialog(QDialog, FORM_CLASS):
             self.progbar.setValue(40)
             QCoreApplication.processEvents()
 
-            # 2. Basemap (Imagery/Raster or Google Satellite XYZ)
-            basemap_dir = os.path.join(self.fileWidget.filePath(), 'Basemap')
-            ortho_loaded = False
-            if os.path.isdir(basemap_dir):
-                ortho_candidates = [
-                    f for f in os.listdir(basemap_dir)
-                    if f.lower().endswith(('.tif', '.tiff', '.ecw', '.img', '.vrt'))
-                ]
-                if ortho_candidates:
-                    ortho_path = os.path.join(basemap_dir, ortho_candidates[0])
-                    ortho_lyr = QgsRasterLayer(ortho_path, f"{mun}_img", "gdal")
-                    if ortho_lyr.isValid():
-                        QgsProject.instance().addMapLayer(ortho_lyr, False)
-                        groups['Basemap'].addLayer(ortho_lyr)
-                        ortho_loaded = True
+            # 2. Basemap (offline image for mun)
+            basemap_dir = os.path.join(self.fileWidget.filePath().strip(), 'Basemap')
+            if not os.path.isdir(basemap_dir):
+                self.show_error(f"Basemap folder does not exist:\n{basemap_dir}")
+                return
 
-            if not ortho_loaded:
-                xyz_url = (
-                    "type=xyz&url=https://mt1.google.com/vt/lyrs%3Ds%26x%3D%7Bx%7D%26y%3D%7By%7D%26z%3D%7Bz%7D"
-                    "&zmax=19&zmin=0"
-                )
-                sat_layer = QgsRasterLayer(xyz_url, "Google Satellite", "wms")
-                if sat_layer.isValid():
-                    QgsProject.instance().addMapLayer(sat_layer, False)
-                    groups['Basemap'].addLayer(sat_layer)
+            basemap_candidates = [
+                f"{mun}_img.gpkg",
+                f"{mun}_img.mbtiles",
+                f"{mun}_img.tif",
+                f"{mun}_img.tiff",
+                f"{mun}.gpkg",
+                f"{mun}.mbtiles",
+                f"{mun}.tif",
+                f"{mun}.tiff",
+            ]
+            basemap_path = None
+            for cand in basemap_candidates:
+                p = os.path.join(basemap_dir, cand)
+                if os.path.exists(p):
+                    basemap_path = p
+                    break
+
+            if not basemap_path and os.path.isdir(basemap_dir):
+                actual_basemaps = {f.lower(): f for f in os.listdir(basemap_dir)}
+                for cand in basemap_candidates:
+                    if cand.lower() in actual_basemaps:
+                        basemap_path = os.path.join(basemap_dir, actual_basemaps[cand.lower()])
+                        break
+
+            if not basemap_path:
+                self.show_error(f"Offline image file not found in Basemap folder for: {mun}")
+                return
+
+            basemap_layer = QgsRasterLayer(basemap_path, f"{mun}_img", "gdal")
+            if not basemap_layer.isValid():
+                self.show_error(f"Invalid offline image layer: {basemap_path}")
+                return
+
+            QgsProject.instance().addMapLayer(basemap_layer, False)
+            groups['Basemap'].addLayer(basemap_layer)
+
+            # Collapse basemap children
+            for child in groups['Basemap'].children():
+                if isinstance(child, QgsLayerTreeLayer):
+                    child.setExpanded(False)
 
             self.progbar.setValue(55)
             QCoreApplication.processEvents()
 
             # 3. Reference Layer
-            ref_path = os.path.join(rep_dir, f"{nos}_{mun}_Selected SSU_{rep}.gpkg")
+            ref_path = os.path.join(rep_dir, "Selected SSU_Ref.gpkg")
             if not os.path.exists(ref_path):
-                self.show_error(f"Reference file not found:\n{ref_path}")
-                return
+                alt_path = os.path.join(rep_dir, f"{nos}_{mun}_Selected SSU_{rep}.gpkg")
+                if os.path.exists(alt_path):
+                    ref_path = alt_path
+                else:
+                    self.show_error(f"Reference file not found:\n{ref_path}")
+                    return
             ref_layer = QgsVectorLayer(ref_path, "Selected SSU_Ref", "ogr")
             if not ref_layer.isValid():
                 self.show_error(f"Invalid reference layer:\n{ref_path}")
@@ -411,16 +467,40 @@ class LoaderDialog(QDialog, FORM_CLASS):
             self.load_successful = True
             self.loadbtn.setEnabled(True)
             QCoreApplication.processEvents()
-            QMessageBox.information(self, "Success", "Layers successfully loaded.")
+            # Zoom to Barangay Boundary layer (Base Layer)
+            bgy_lyr = None
+            if 'Base Layer' in groups:
+                for child in groups['Base Layer'].children():
+                    if isinstance(child, QgsLayerTreeLayer):
+                        lyr = child.layer()
+                        if lyr and lyr.isValid():
+                            bgy_lyr = lyr
+                            break
 
-            # Zoom to first valid layer in Basemap
-            for child in groups['Basemap'].children():
-                if isinstance(child, QgsLayerTreeLayer):
-                    lyr = child.layer()
-                    if lyr and lyr.isValid():
-                        self.iface.mapCanvas().setExtent(lyr.extent())
-                        self.iface.mapCanvas().refresh()
-                        break
+            if bgy_lyr and self.iface and self.iface.mapCanvas():
+                canvas = self.iface.mapCanvas()
+                ext = bgy_lyr.extent()
+                if ext and not ext.isEmpty():
+                    if canvas.mapSettings().destinationCrs() != bgy_lyr.crs():
+                        from qgis.core import QgsCoordinateTransform
+                        xform = QgsCoordinateTransform(bgy_lyr.crs(), canvas.mapSettings().destinationCrs(), QgsProject.instance())
+                        ext = xform.transformBoundingBox(ext)
+                    ext.scale(1.05)
+                    canvas.setExtent(ext)
+                    canvas.refresh()
+            elif 'Basemap' in groups and self.iface and self.iface.mapCanvas():
+                for child in groups['Basemap'].children():
+                    if isinstance(child, QgsLayerTreeLayer):
+                        lyr = child.layer()
+                        if lyr and lyr.isValid() and not lyr.name().lower().startswith("google"):
+                            self.iface.mapCanvas().setExtent(lyr.extent())
+                            self.iface.mapCanvas().refresh()
+                            break
+
+            QCoreApplication.processEvents()
+            QMessageBox.information(self, "Success", "Layers successfully loaded.")
+            if self.iface and self.iface.mapCanvas():
+                self.iface.mapCanvas().refresh()
 
         except Exception as e:
             self.show_error(f"Unexpected error: {str(e)}")
@@ -546,12 +626,18 @@ class LoaderDialog(QDialog, FORM_CLASS):
             pass
 
         def run_convert(inner_folder_name, psu_filter=None, progress_callback=None):
-            def set_prog(val):
+            def set_prog(val, text=""):
                 if progress_callback:
                     progress_callback(val)
+                else:
+                    self.progbar.setValue(val)
+                if text:
+                    self.progbar.setFormat(f"{text} ({val}%)")
+                else:
+                    self.progbar.setFormat("%p%")
                 QCoreApplication.processEvents()
 
-            set_prog(5)
+            set_prog(5, "Initializing...")
             target_root = base_path / "Package for Qfield" / nos
             target_dir = target_root / inner_folder_name
             target_dir.mkdir(parents=True, exist_ok=True)
@@ -559,12 +645,14 @@ class LoaderDialog(QDialog, FORM_CLASS):
             val_root = base_path / "Validation Output" / nos / mun
             val_root.mkdir(parents=True, exist_ok=True)
 
+            orig_proj_filename = project.fileName()
             temp_proj_path = str(base_path / "geofasu_temp_export.qgz")
             project.write(temp_proj_path)
+            project.setFileName(orig_proj_filename)
 
             temp_project = QgsProject()
             temp_project.read(temp_proj_path)
-            temp_project.setFileName(str(target_dir / f"{inner_folder_name}.qgz"))
+            temp_project.setFileName(str(target_dir / f"{inner_folder_name}.qgs"))
 
             ref_extent = None
             ref_layer_obj = None
@@ -670,36 +758,222 @@ class LoaderDialog(QDialog, FORM_CLASS):
                         expr = f"\"{match_field}\" IN ({','.join(sql_escaped)})"
                         base_layer_for_mask.setSubsetString(expr)
 
-            set_prog(20)
-            cc = CloudConverter(temp_project, str(target_dir))
-            cc.convert()
-            set_prog(70)
+            # Determine mask features for Basemap clipping
+            mask_features = []
+            if matching_features:
+                mask_features = matching_features
+            elif base_layer_for_mask and base_layer_for_mask.isValid():
+                ref_lyr = self.get_reference_layer("Selected SSU_Ref")
+                if ref_lyr and ref_lyr.isValid():
+                    from qgis.core import QgsCoordinateTransform, QgsGeometry
+                    xform = None
+                    if ref_lyr.crs() != base_layer_for_mask.crs() and ref_lyr.crs().isValid() and base_layer_for_mask.crs().isValid():
+                        xform = QgsCoordinateTransform(ref_lyr.crs(), base_layer_for_mask.crs(), temp_project.transformContext())
+                    ref_geoms = []
+                    for f in ref_lyr.getFeatures():
+                        g = f.geometry()
+                        if g and not g.isEmpty():
+                            g_c = QgsGeometry(g)
+                            if xform:
+                                g_c.transform(xform)
+                            ref_geoms.append(g_c)
+                    if ref_geoms:
+                        comb = QgsGeometry.unaryUnion(ref_geoms) if len(ref_geoms) > 1 else ref_geoms[0]
+                        for feat in base_layer_for_mask.getFeatures():
+                            gm = feat.geometry()
+                            if gm and not gm.isEmpty() and gm.intersects(comb):
+                                mask_features.append(feat)
 
-            # Copy validation outputs and zip
+                if not mask_features:
+                    mask_features = list(base_layer_for_mask.getFeatures())
+
+            # Clip Basemap and convert to MBTiles
+            basemap_group = root.findGroup("Basemap")
+            if basemap_group and mask_features and base_layer_for_mask and base_layer_for_mask.isValid():
+                for child in basemap_group.children():
+                    if isinstance(child, QgsLayerTreeLayer) and child.layer():
+                        set_prog(25)
+                        raster_layer = child.layer()
+                        import tempfile
+                        import uuid
+                        from osgeo import gdal
+                        from qgis.core import (
+                            QgsVectorLayer,
+                            QgsFeature,
+                            QgsGeometry,
+                            QgsRasterLayer,
+                            QgsCoordinateTransform,
+                            QgsVectorFileWriter
+                        )
+
+                        raster_crs = raster_layer.crs()
+                        base_crs = base_layer_for_mask.crs()
+                        xform = None
+                        if raster_crs.isValid() and base_crs.isValid() and raster_crs != base_crs:
+                            xform = QgsCoordinateTransform(base_crs, raster_crs, temp_project.transformContext())
+
+                        crs_auth = raster_crs.authid() if raster_crs.isValid() else base_crs.authid()
+                        mask_memory_layer = QgsVectorLayer(f"MultiPolygon?crs={crs_auth}", "barangay_mask", "memory")
+                        dp = mask_memory_layer.dataProvider()
+
+                        mask_feats = []
+                        for feat in mask_features:
+                            geom = feat.geometry()
+                            if geom and not geom.isEmpty():
+                                g_copy = QgsGeometry(geom)
+                                if xform:
+                                    g_copy.transform(xform)
+                                f_new = QgsFeature()
+                                f_new.setGeometry(g_copy)
+                                mask_feats.append(f_new)
+
+                        if mask_feats:
+                            dp.addFeatures(mask_feats)
+                            mask_memory_layer.updateExtents()
+
+                            temp_mask_path = os.path.join(
+                                tempfile.gettempdir(),
+                                f"mask_{inner_folder_name}_{uuid.uuid4().hex[:6]}.gpkg"
+                            )
+                            QgsVectorFileWriter.writeAsVectorFormat(
+                                mask_memory_layer, temp_mask_path, "UTF-8", raster_crs, "GPKG"
+                            )
+
+                            extent = mask_memory_layer.extent()
+                            bounds = [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
+
+                            temp_tif_path = os.path.join(
+                                tempfile.gettempdir(),
+                                f"{raster_layer.name()}_{inner_folder_name}_{uuid.uuid4().hex[:6]}.tif"
+                            )
+                            dest_mbtiles_path = str(target_dir / f"{raster_layer.name()}.mbtiles")
+
+                            try:
+                                gdal.SetCacheMax(512 * 1024 * 1024)
+
+                                def warp_cb(complete, message, unknown):
+                                    p = int(20 + complete * 20)
+                                    set_prog(p, "Clipping basemap...")
+                                    return 1
+
+                                gdal.Warp(
+                                    temp_tif_path,
+                                    raster_layer.source(),
+                                    format='GTiff',
+                                    outputBounds=bounds,
+                                    cutlineDSName=temp_mask_path,
+                                    cropToCutline=True,
+                                    dstSRS=raster_crs.authid() if raster_crs.isValid() else None,
+                                    warpOptions=['NUM_THREADS=ALL_CPUS'],
+                                    creationOptions=['COMPRESS=JPEG', 'JPEG_QUALITY=80', 'TILED=YES', 'NUM_THREADS=ALL_CPUS'],
+                                    callback=warp_cb
+                                )
+
+                                if os.path.exists(temp_tif_path):
+                                    def trans_cb(complete, message, unknown):
+                                        p = int(40 + complete * 15)
+                                        set_prog(p, "Converting to MBTiles...")
+                                        return 1
+
+                                    gdal.Translate(
+                                        dest_mbtiles_path,
+                                        temp_tif_path,
+                                        format='MBTILES',
+                                        creationOptions=['TILE_FORMAT=JPEG', 'QUALITY=80', 'ZOOM_LEVEL_STRATEGY=AUTO'],
+                                        callback=trans_cb
+                                    )
+
+                                    if os.path.exists(dest_mbtiles_path):
+                                        def ov_cb(complete, message, unknown):
+                                            p = int(55 + complete * 10)
+                                            set_prog(p, "Building overviews...")
+                                            return 1
+
+                                        ds = gdal.Open(dest_mbtiles_path, gdal.GA_Update)
+                                        if ds:
+                                            ds.BuildOverviews("NEAREST", [2, 4, 8, 16], callback=ov_cb)
+                                            ds = None
+
+                                        new_raster = QgsRasterLayer(dest_mbtiles_path, raster_layer.name(), "gdal")
+                                        if new_raster.isValid():
+                                            temp_project.addMapLayer(new_raster, False)
+                                            basemap_group.insertLayer(0, new_raster)
+                                            temp_project.removeMapLayer(raster_layer.id())
+
+                                    try:
+                                        if os.path.exists(temp_tif_path):
+                                            os.remove(temp_tif_path)
+                                    except Exception:
+                                        pass
+
+                                try:
+                                    if os.path.exists(temp_mask_path):
+                                        os.remove(temp_mask_path)
+                                except Exception:
+                                    pass
+                            except Exception as e:
+                                print(f"Basemap clip to mbtiles failed: {e}")
+                        break
+
+            set_prog(65, "Packaging QField project...")
+            try:
+                import importlib
+                for mod_n in ["libqfieldsync.layer", "libqfieldsync.utils.qgis", "qfieldsync.core.cloud_converter"]:
+                    if mod_n in sys.modules:
+                        try:
+                            importlib.reload(sys.modules[mod_n])
+                        except Exception:
+                            pass
+                from qfieldsync.core.cloud_converter import CloudConverter
+            except Exception:
+                pass
+
+            try:
+                cc = CloudConverter(temp_project, str(target_dir))
+                setattr(cc, "open_project_after_convert", False)
+                cc.total_progress_updated.connect(
+                    lambda cur, tot, msg: set_prog(int(65 + (cur / max(tot, 1)) * 25), "Writing QField project...")
+                )
+                cc.convert()
+            finally:
+                try:
+                    if os.path.exists(temp_proj_path):
+                        os.remove(temp_proj_path)
+                except Exception:
+                    pass
+
+            set_prog(92, "Copying validation layers...")
+            # Copy validation outputs
             for gpkg_cand in target_dir.glob("*.gpkg"):
                 if not any(k in gpkg_cand.name.lower() for k in ["ref", "tracklog", "bdry"]):
                     shutil.copy2(gpkg_cand, val_root / gpkg_cand.name)
 
-            set_prog(85)
-            zip_dest = target_root / f"{inner_folder_name}.zip"
-            with ZipFile(zip_dest, "w", ZIP_DEFLATED) as zf:
-                for file_p in target_dir.rglob("*"):
-                    if file_p.is_file():
-                        zf.write(file_p, file_p.relative_to(target_root))
-
-            set_prog(100)
+            set_prog(100, "Done")
             return target_dir
 
         if reply == QMessageBox.No:
+            self.genrate.setEnabled(False)
+            self.loadbtn.setEnabled(False)
             self.progbar.setValue(10)
+            self.progbar.setFormat("Exporting... %p%")
             QCoreApplication.processEvents()
             inner_name = f"{nos}_{mun}_Selected SSU_{rep}"
             try:
-                run_convert(inner_name, progress_callback=lambda p: self.progbar.setValue(p))
+                def make_single_cb(p):
+                    self.progbar.setValue(p)
+                    QCoreApplication.processEvents()
+
+                run_convert(inner_name, progress_callback=make_single_cb)
                 self.progbar.setValue(100)
+                self.progbar.setFormat("%p%")
+                self.genrate.setEnabled(False)
+                self.loadbtn.setEnabled(True)
                 QMessageBox.information(self, "Export Complete", f"Successfully generated QField project: {inner_name}")
             except Exception as e:
                 self.progbar.setValue(0)
+                self.progbar.setFormat("%p%")
+                self.genrate.setEnabled(True)
+                self.loadbtn.setEnabled(True)
                 QMessageBox.critical(self, "Export Failed", str(e))
             return
 
@@ -724,29 +998,52 @@ class LoaderDialog(QDialog, FORM_CLASS):
             if not selected_psus:
                 return
 
+        self.genrate.setEnabled(False)
+        self.loadbtn.setEnabled(False)
         self.progbar.setValue(0)
         QCoreApplication.processEvents()
 
         success, fail = 0, 0
+        failed_errors = []
         total = len(selected_psus)
         for i, psu in enumerate(selected_psus):
-            def make_cb(index):
+            def make_cb(index, psu_name):
                 def cb(p):
-                    self.progbar.setValue(int(((index + (p / 100)) / total) * 100))
+                    overall = int(((index + (p / 100)) / total) * 100)
+                    self.progbar.setValue(overall)
+                    self.progbar.setFormat(f"Exporting {psu_name} ({index+1}/{total}): {overall}%")
+                    QCoreApplication.processEvents()
                 return cb
 
             inner_folder = f"{nos}_{mun}_Selected SSU_{rep}_{psu}"
             try:
-                _ = run_convert(inner_folder, psu_filter=psu, progress_callback=make_cb(i))
+                _ = run_convert(inner_folder, psu_filter=psu, progress_callback=make_cb(i, psu))
                 success += 1
-            except Exception:
+            except Exception as e:
                 fail += 1
+                err_str = f"PSU '{psu}': {str(e)}"
+                failed_errors.append(err_str)
+                import traceback
+                print(f"Export error for {psu}:\n{traceback.format_exc()}")
 
         self.progbar.setValue(100)
-        QMessageBox.information(
-            self, "Export Finished",
-            f"Generated {success} QField Project(s)." + (f" ({fail} failed)" if fail else "")
-        )
+        self.progbar.setFormat("%p%")
+        self.loadbtn.setEnabled(True)
+        if fail > 0:
+            self.genrate.setEnabled(True)
+            err_msg = "\n\n".join(failed_errors[:4])
+            if len(failed_errors) > 4:
+                err_msg += f"\n\n...and {len(failed_errors) - 4} more."
+            QMessageBox.critical(
+                self, "Export Issues",
+                f"Generated {success} of {total} QField Project(s).\n\nErrors encountered:\n{err_msg}"
+            )
+        else:
+            self.genrate.setEnabled(False)
+            QMessageBox.information(
+                self, "Export Finished",
+                f"Successfully generated {success} QField Project(s)."
+            )
 
     def choose_psus(self, psu_list):
         """Displays selection dialog for PSUs."""
