@@ -266,45 +266,44 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
     def run_export_excel(self):
         base_dir = self.fileWidget.filePath().strip()
         nos = self.comboxNOS.currentText().strip()
-        mun = self.comboxMun.currentText().strip()
 
-        if not all([base_dir, nos, mun]):
+        if not all([base_dir, nos]):
             QMessageBox.warning(
                 self,
                 "Missing Input",
-                "Please ensure all fields are selected (Directory, Survey, and Municipality).",
+                "Please ensure Reference Directory and Type of Survey are selected.",
             )
             self.progressBar.setValue(0)
             return
 
-        filepinas_dir = os.path.join(base_dir, 'Filepinas', nos, mun)
-        excel_dir = os.path.join(base_dir, 'Excel', nos, mun)
+        filepinas_survey_dir = os.path.join(base_dir, 'Filepinas', nos)
+        excel_dir = os.path.join(base_dir, 'Excel', nos)
 
-        # Collect merged GPKG files to export
+        # Collect all merged GPKG files under the survey in Filepinas
         gpkg_files = []
-        if os.path.isdir(filepinas_dir):
-            for root, dirs, files in os.walk(filepinas_dir):
+        if os.path.isdir(filepinas_survey_dir):
+            for root, dirs, files in os.walk(filepinas_survey_dir):
                 for file in files:
                     if file.endswith('.gpkg'):
                         gpkg_files.append(os.path.join(root, file))
 
         if not gpkg_files:
             # Check if Validation Output exists to give a clear informative message
-            mun_dir = os.path.join(base_dir, 'Validation Output', nos, mun)
-            val_has_files = os.path.isdir(mun_dir) and any(
-                f.endswith('.gpkg') for _, _, files in os.walk(mun_dir) for f in files
+            val_survey_dir = os.path.join(base_dir, 'Validation Output', nos)
+            val_has_files = os.path.isdir(val_survey_dir) and any(
+                f.endswith('.gpkg') for _, _, files in os.walk(val_survey_dir) for f in files
             )
             if val_has_files:
                 QMessageBox.warning(
                     self,
                     "Merge Required",
-                    f"No merged GeoPackage files found in:\n{filepinas_dir}\n\nPlease click 'Merge' first before exporting to Excel."
+                    f"No merged GeoPackage files found in:\n{filepinas_survey_dir}\n\nPlease click 'Merge' for the municipalities first before exporting to Excel."
                 )
             else:
                 QMessageBox.warning(
                     self,
                     "No GeoPackage Found",
-                    f"No GeoPackage files found in:\n{filepinas_dir}"
+                    f"No GeoPackage files found in:\n{filepinas_survey_dir}"
                 )
             self.progressBar.setValue(0)
             return
@@ -312,54 +311,44 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
         gpkg_files.sort()
         os.makedirs(excel_dir, exist_ok=True)
 
-        # Pre-flight check: ensure excel output files are not locked, and ask for overwrite if any exist
-        existing_files = []
-        locked_files = []
+        excel_name = "032_GEOMS_Excel_Upload.xlsx"
+        excel_path = os.path.join(excel_dir, excel_name)
 
-        for gpkg_path in gpkg_files:
-            base_name = os.path.splitext(os.path.basename(gpkg_path))[0]
-            excel_path = os.path.join(excel_dir, f"{base_name}.xlsx")
+        # Pre-flight check: ensure excel output file is not locked, and ask for overwrite if it exists
+        if os.path.exists(excel_path):
+            try:
+                with open(excel_path, 'a'):
+                    pass
+            except IOError:
+                QMessageBox.critical(
+                    self,
+                    "File In Use",
+                    f"The Excel file '{excel_name}' is currently open or locked by another program (like Microsoft Excel).\n\nPlease close it and try again."
+                )
+                self.progressBar.setValue(0)
+                return
 
-            if os.path.exists(excel_path):
-                existing_files.append(excel_path)
-                try:
-                    with open(excel_path, 'a'):
-                        pass
-                except IOError:
-                    locked_files.append(excel_path)
-
-        if locked_files:
-            locked_msg = "\n".join([os.path.basename(f) for f in locked_files])
-            QMessageBox.critical(
-                self,
-                "Files In Use",
-                f"The following Excel files are currently open or locked by another program (like Excel).\n\nPlease close them and try again:\n\n{locked_msg}"
-            )
-            self.progressBar.setValue(0)
-            return
-
-        if existing_files:
             reply = QMessageBox.question(
                 self,
-                "Overwrite Files?",
-                "Some Excel output files already exist. Do you want to overwrite them?",
+                "Overwrite File?",
+                f"The province Excel file '{excel_name}' already exists in:\n{excel_dir}\n\nDo you want to overwrite it?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
             if reply == QMessageBox.No:
                 self.progressBar.setValue(0)
                 return
-            for f in existing_files:
-                try:
-                    os.remove(f)
-                except Exception as e:
-                    QMessageBox.critical(
-                        self,
-                        "Error",
-                        f"Failed to delete existing file before overwriting:\n{f}\nError: {e}"
-                    )
-                    self.progressBar.setValue(0)
-                    return
+
+            try:
+                os.remove(excel_path)
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to delete existing file before overwriting:\n{excel_path}\nError: {e}"
+                )
+                self.progressBar.setValue(0)
+                return
 
         self.mergeBtn.setEnabled(False)
         self.exportBtn.setEnabled(False)
@@ -368,16 +357,18 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
 
         try:
             total_files = len(gpkg_files)
-            current_file = 0
+            df_list = []
+            processed_muns = set()
 
-            for gpkg_path in gpkg_files:
-                base_prog = int((current_file / total_files) * 100)
-                self.progressBar.setValue(base_prog + 10)
+            for idx, gpkg_path in enumerate(gpkg_files):
+                base_prog = int((idx / total_files) * 85)
+                self.progressBar.setValue(base_prog + 5)
                 QCoreApplication.processEvents()
 
-                base_name = os.path.splitext(os.path.basename(gpkg_path))[0]
-                excel_name = f"{base_name}.xlsx"
-                excel_path = os.path.join(excel_dir, excel_name)
+                rel = os.path.relpath(gpkg_path, filepinas_survey_dir)
+                parts = rel.split(os.sep)
+                if len(parts) > 1:
+                    processed_muns.add(parts[0])
 
                 merged_layer = None
                 sublayers = QgsProviderRegistry.instance().providerMetadata('ogr').querySublayers(gpkg_path)
@@ -387,7 +378,7 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                         break
 
                 if merged_layer and merged_layer.isValid():
-                    field_names = [field.name() for field in merged_layer.fields()]
+                    field_names = [field.name() for field in merged_layer.fields() if field.name().lower() not in ['layer', 'path']]
                     data = []
                     features = merged_layer.getFeatures()
 
@@ -408,20 +399,37 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                             row['WKT'] = ""
                         data.append(row)
 
-                    df = pd.DataFrame(data)
-                    df = df.fillna("")
-                    df.to_excel(excel_path, index=False)
+                    if data:
+                        df_temp = pd.DataFrame(data)
+                        df_list.append(df_temp)
 
-                current_file += 1
-                self.progressBar.setValue(int((current_file / total_files) * 100))
-                QCoreApplication.processEvents()
+            self.progressBar.setValue(90)
+            QCoreApplication.processEvents()
+
+            if df_list:
+                final_df = pd.concat(df_list, ignore_index=True)
+                final_df = final_df.fillna("")
+
+                # Renumber fid sequentially if present so rows have unique IDs
+                for fid_col in ['fid', 'FID']:
+                    if fid_col in final_df.columns:
+                        final_df[fid_col] = range(1, len(final_df) + 1)
+
+                final_df.to_excel(excel_path, index=False)
+                total_records = len(final_df)
+            else:
+                final_df = pd.DataFrame()
+                final_df.to_excel(excel_path, index=False)
+                total_records = 0
 
             self.progressBar.setValue(100)
             QCoreApplication.processEvents()
+
+            mun_info = f" across {len(processed_muns)} municipality(ies)" if processed_muns else ""
             QMessageBox.information(
                 self,
                 "Success",
-                f"Data successfully exported to Excel folder:\n{excel_dir}"
+                f"Successfully exported {total_records} records from {total_files} merged file(s){mun_info} to province Excel file:\n{excel_path}"
             )
             self.progressBar.setValue(0)
 
