@@ -8,7 +8,7 @@ import pandas as pd
 
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
-from qgis.PyQt.QtCore import Qt, QVariant, QCoreApplication
+from qgis.PyQt.QtCore import Qt, QVariant, QCoreApplication, pyqtSignal
 from qgis.PyQt.QtGui import QPixmap
 from qgis.core import (
     QgsVectorLayer,
@@ -31,6 +31,7 @@ FORM_CLASS, _ = uic.loadUiType(
 )
 
 class GeoFASUDialog(QDialog, FORM_CLASS):
+    process_completed = pyqtSignal(str, str)
     def __init__(self, parent=None):
         """Initializes the dialog."""
         super().__init__(parent)
@@ -103,6 +104,7 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
             self.progressBar.setValue(100)
             QCoreApplication.processEvents()
             QMessageBox.information(self, "Success", "GeoPackages created successfully.")
+            self.process_completed.emit(folder_name, out_dir)
 
         except Exception as e:
             QMessageBox.critical(self, "An Unexpected Error Occurred", f"Error: {e}")

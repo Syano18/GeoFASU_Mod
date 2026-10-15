@@ -172,6 +172,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
     # ---------- Combos ----------
     def populate_nos_list(self):
+        current_selection = self.comboxNOS.currentText().strip()
         self.comboxNOS.blockSignals(True)
         self.comboxMun.blockSignals(True)
         self.comboxRep.blockSignals(True)
@@ -184,33 +185,51 @@ class LoaderDialog(QDialog, FORM_CLASS):
         self.progbar.setValue(0)
 
         base_path = os.path.join(self.fileWidget.filePath(), 'Projects')
+        has_match = False
         if os.path.isdir(base_path):
             dir_list = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
             self.comboxNOS.addItems(dir_list)
-            self.comboxNOS.setCurrentIndex(-1)
+            if current_selection and current_selection in dir_list:
+                self.comboxNOS.setCurrentText(current_selection)
+                has_match = True
+            else:
+                self.comboxNOS.setCurrentIndex(-1)
 
         self.comboxNOS.blockSignals(False)
         self.comboxMun.blockSignals(False)
         self.comboxRep.blockSignals(False)
 
+        if has_match:
+            self.update_mun_list()
+
     def update_mun_list(self):
+        current_mun = self.comboxMun.currentText().strip()
         self.comboxMun.blockSignals(True)
         self.comboxRep.blockSignals(True)
 
         self.comboxMun.clear()
         self.comboxRep.clear()
         nos = self.comboxNOS.currentText().strip()
+        has_match = False
         if nos:
             base_path = os.path.join(self.fileWidget.filePath(), 'Projects', nos)
             if os.path.isdir(base_path):
                 dirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
                 self.comboxMun.addItems(dirs)
-                self.comboxMun.setCurrentIndex(-1)
+                if current_mun and current_mun in dirs:
+                    self.comboxMun.setCurrentText(current_mun)
+                    has_match = True
+                else:
+                    self.comboxMun.setCurrentIndex(-1)
 
         self.comboxMun.blockSignals(False)
         self.comboxRep.blockSignals(False)
 
+        if has_match:
+            self.update_rep_list()
+
     def update_rep_list(self):
+        current_rep = self.comboxRep.currentText().strip()
         self.comboxRep.blockSignals(True)
         self.comboxRep.clear()
         nos = self.comboxNOS.currentText().strip()
@@ -223,7 +242,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
             if os.path.isdir(base_path):
                 dirs = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
                 self.comboxRep.addItems(dirs)
-                self.comboxRep.setCurrentIndex(-1)
+                if current_rep and current_rep in dirs:
+                    self.comboxRep.setCurrentText(current_rep)
+                else:
+                    self.comboxRep.setCurrentIndex(-1)
 
         self.comboxRep.blockSignals(False)
 

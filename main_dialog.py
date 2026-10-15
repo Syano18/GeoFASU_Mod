@@ -66,6 +66,7 @@ class PreprocessingDialog(QDialog, FORM_CLASS):
         # Modules
         self.tab_converter = GeoFASUDialog(parent=self)
         self.tab_loader = LoaderDialog(parent=self)
+        self.tab_converter.process_completed.connect(self.on_converter_completed)
 
         self.tabs = [
             (self.tab_converter, "Excel to GPKG", "converter.png"),
@@ -78,9 +79,28 @@ class PreprocessingDialog(QDialog, FORM_CLASS):
             icon = QIcon(str(icon_file)) if icon_file.exists() else QIcon()
             self.tabWidget.addTab(_make_scroll(widget), icon, title)
 
+        self.tabWidget.currentChanged.connect(self.on_tab_changed)
+
+    def on_tab_changed(self, index: int):
+        if index == 1 and hasattr(self, 'tab_loader'):
+            self.tab_loader.populate_nos_list()
+
+    def on_converter_completed(self, survey_name: str = "", out_dir: str = ""):
+        if hasattr(self, 'tab_loader'):
+            if out_dir and os.path.isdir(out_dir):
+                self.tab_loader.fileWidget.setFilePath(out_dir)
+            self.tab_loader.populate_nos_list()
+            if survey_name:
+                idx = self.tab_loader.comboxNOS.findText(survey_name)
+                if idx != -1:
+                    self.tab_loader.comboxNOS.setCurrentIndex(idx)
+                    self.tab_loader.update_mun_list()
+
     def set_active_tab(self, index: int):
         if 0 <= index < self.tabWidget.count():
             self.tabWidget.setCurrentIndex(index)
+            if index == 1 and hasattr(self, 'tab_loader'):
+                self.tab_loader.populate_nos_list()
 
     def reset_all_modules(self):
         """Resets all fields in all preprocessing modules to their default values."""
