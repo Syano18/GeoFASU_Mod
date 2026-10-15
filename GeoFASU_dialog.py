@@ -85,16 +85,20 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
             qfield_folder = os.path.join(out_dir, 'Package for Qfield', folder_name)
             validation_folder = os.path.join(out_dir, 'Validation Output', folder_name)
             filepinas_folder = os.path.join(out_dir, 'Filepinas', folder_name)
+            excel_folder = os.path.join(out_dir, 'Excel', folder_name)
+            from_tablet_folder = os.path.join(out_dir, 'From Tablet', folder_name)
             os.makedirs(project_folder, exist_ok=True)
             os.makedirs(qfield_folder, exist_ok=True)
             os.makedirs(validation_folder, exist_ok=True)
             os.makedirs(filepinas_folder, exist_ok=True)
+            os.makedirs(excel_folder, exist_ok=True)
+            os.makedirs(from_tablet_folder, exist_ok=True)
 
             self.progressBar.setValue(10)
             QCoreApplication.processEvents()
 
             # --- 4. Process and Export Data ---
-            self._export_to_geopackages(df, project_folder, filepinas_folder)
+            self._export_to_geopackages(df, project_folder, filepinas_folder, validation_folder, from_tablet_folder)
 
             self.progressBar.setValue(100)
             QCoreApplication.processEvents()
@@ -148,7 +152,7 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         df = df.fillna("")
         return df
 
-    def _export_to_geopackages(self, df, project_folder, filepinas_folder):
+    def _export_to_geopackages(self, df, project_folder, filepinas_folder, validation_folder, from_tablet_folder):
         """
         Iterates through the DataFrame and exports data into structured GeoPackage files.
         """
@@ -167,8 +171,12 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         for mun_name, group_mun in df.groupby('Mun_name'):
             mun_project_path = os.path.join(project_folder, str(mun_name))
             mun_filepinas_path = os.path.join(filepinas_folder, str(mun_name))
+            mun_validation_path = os.path.join(validation_folder, str(mun_name))
+            mun_from_tablet_path = os.path.join(from_tablet_folder, str(mun_name))
             os.makedirs(mun_project_path, exist_ok=True)
             os.makedirs(mun_filepinas_path, exist_ok=True)
+            os.makedirs(mun_validation_path, exist_ok=True)
+            os.makedirs(mun_from_tablet_path, exist_ok=True)
 
             reps = group_mun.groupby('Replicate_Number')
             total_reps = len(reps)

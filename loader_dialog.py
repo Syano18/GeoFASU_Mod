@@ -569,14 +569,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                 pass
                             break
 
-                sample_group = root.findGroup("Samples")
-                sample_layer_name = f"{nos}_{mun}_Selected SSU_{rep}"
-                if sample_group:
-                    for child in sample_group.children():
-                        if child.name() == sample_layer_name and child.layer():
-                            child.layer().setSubsetString(f"\"PSU_Name\" = '{psu_filter}'")
-                            break
-
                 base_group = root.findGroup("Base Layer")
                 base_layer_for_mask = None
                 matching_features = []
