@@ -170,6 +170,8 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
         # UI Signals
         self.runButton.clicked.connect(self.run_checker)
         self.updateButton.clicked.connect(self.update_ssu_list)
+        self.comboxSample.currentIndexChanged.connect(self.on_layer_selection_changed)
+        self.comboxRef.currentIndexChanged.connect(self.on_layer_selection_changed)
 
     def showEvent(self, event):
         self.populate_layers()
@@ -277,6 +279,115 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
         self.comboxSample.blockSignals(False)
         self.comboxRef.blockSignals(False)
+        self.on_layer_selection_changed()
+
+    def on_layer_selection_changed(self):
+        """Automatically filters Reference Layer when dropdown selections change."""
+        sample_id = self.comboxSample.currentData()
+        ref_id = self.comboxRef.currentData()
+        if sample_id and ref_id:
+            sample_layer = QgsProject.instance().mapLayer(sample_id)
+            ref_layer = QgsProject.instance().mapLayer(ref_id)
+            if sample_layer and ref_layer and sample_layer.id() != ref_layer.id():
+                self.filter_reference_layer(sample_layer, ref_layer, log_to_widget=False)
+
+    def filter_reference_layer(self, sample_layer, ref_layer, log_to_widget=True):
+        """
+        Filters Selected SSU Ref based on the Selected SSU Replicate Number Layer
+        (replicate number and PSU if applicable) to match the data.
+        """
+        if not sample_layer or not sample_layer.isValid() or not ref_layer or not ref_layer.isValid():
+            return None
+
+        # 1. Determine Replicate Number from sample_layer
+        reps = set()
+        f_rep = find_field_name(
+            sample_layer,
+            "Replicate_Number",
+            ["Replicate", "Rep_No", "rep_no", "REP", "rep", "Replicate Number", "replicate_number"],
+        )
+        if f_rep:
+            for feat in sample_layer.getFeatures():
+                v = feat[f_rep]
+                if not is_null_or_empty(v):
+                    reps.add(str(v).strip())
+
+        # Fallback to layer name if not found from features
+        if not reps:
+            m_rep = re.search(r"Selected\s*SSU[_\s]+(R\d+|\d+)", sample_layer.name(), re.IGNORECASE)
+            if m_rep:
+                reps.add(m_rep.group(1).strip())
+
+        # Fallback to source path
+        if not reps:
+            m_src = re.search(r"[/\\](R\d+)[/\\]", sample_layer.source(), re.IGNORECASE)
+            if m_src:
+                reps.add(m_src.group(1).strip())
+
+        # Build target values for replicate (e.g., '16', 'R16')
+        target_rep_values = set()
+        for r in reps:
+            target_rep_values.add(r)
+            digits = re.sub(r"\D", "", r)
+            if digits:
+                target_rep_values.add(digits)
+                target_rep_values.add(f"R{digits}")
+
+        # 2. Determine PSU Name(s) from sample_layer (if specific PSU)
+        psus = set()
+        f_psu = find_field_name(
+            sample_layer,
+            "PSU_Name",
+            ["psu_name", "PSU", "psu", "PSU Name", "PSU_name"],
+        )
+        if f_psu:
+            for feat in sample_layer.getFeatures():
+                v = feat[f_psu]
+                if not is_null_or_empty(v):
+                    psus.add(str(v).strip())
+
+        # Check if PSU name is in the layer name e.g. ..._Selected SSU_R16_Bulanao...
+        if not psus:
+            m_psu = re.search(r"Selected\s*SSU[_\s]+(?:R\d+|\d+)[_\s]+(.+)$", sample_layer.name(), re.IGNORECASE)
+            if m_psu:
+                psus.add(m_psu.group(1).strip())
+
+        # 3. Resolve fields in ref_layer
+        r_rep = find_field_name(
+            ref_layer,
+            "Replicate_Number",
+            ["Replicate", "Rep_No", "rep_no", "REP", "rep", "Replicate Number", "replicate_number"],
+        )
+        r_psu = find_field_name(
+            ref_layer,
+            "PSU_Name",
+            ["psu_name", "PSU", "psu", "PSU Name", "PSU_name"],
+        )
+
+        filter_clauses = []
+        if r_rep and target_rep_values:
+            rep_escaped = ["'" + v.replace("'", "''") + "'" for v in sorted(target_rep_values)]
+            filter_clauses.append(f'"{r_rep}" IN ({",".join(rep_escaped)})')
+
+        if r_psu and psus:
+            psu_escaped = ["'" + p.replace("'", "''") + "'" for p in sorted(psus)]
+            filter_clauses.append(f'"{r_psu}" IN ({",".join(psu_escaped)})')
+
+        if filter_clauses:
+            full_filter = " AND ".join(filter_clauses)
+            ref_layer.setSubsetString(full_filter)
+            ref_layer.updateExtents()
+            if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                self.iface.mapCanvas().refresh()
+            if log_to_widget:
+                rep_info = f"Replicate: {', '.join(sorted(reps))}" if reps else ""
+                psu_info = f", PSU: {', '.join(sorted(psus))}" if psus else ""
+                self.log(f"• Filtered Reference Layer '{ref_layer.name()}' ({rep_info}{psu_info})")
+                self.log(f"  └─ Filter expression: {full_filter}")
+                self.log(f"  └─ Filtered features in Reference: {ref_layer.featureCount()}")
+            return full_filter
+        else:
+            return None
 
     def run_checker(self):
         """Executes completeness validation between Sample SSU and Reference SSU."""
@@ -336,6 +447,10 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
         self.log("-" * 55)
 
         try:
+            # 0. Filter Reference SSU layer based on Sample SSU layer to match the data
+            self.filter_reference_layer(sample_layer, ref_layer, log_to_widget=True)
+            self.log("-" * 55)
+
             # 1. Resolve Sample SSU fields
             f_uc = find_field_name(
                 sample_layer,
@@ -693,6 +808,9 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
         QCoreApplication.processEvents()
 
         try:
+            # 0. Ensure Reference SSU layer is filtered based on Sample SSU layer to match the data
+            self.filter_reference_layer(sample_layer, ref_layer, log_to_widget=False)
+
             # 1. Collect all keys currently present in Sample SSU
             sample_keys = set()
             for feat in sample_layer.getFeatures():
