@@ -193,6 +193,7 @@ class CheckerDialog(QDialog, FORM_CLASS):
 
         self.comboxSample.setPlaceholderText("-- Select Sample SSU Layer --")
 
+        sample_priority = -1
         sample_match_idx = -1
 
         for idx, lyr in enumerate(vector_layers):
@@ -200,13 +201,27 @@ class CheckerDialog(QDialog, FORM_CLASS):
 
             lyr_name_lower = lyr.name().lower()
 
-            # Auto-detection for Sample SSU
-            if sample_match_idx == -1:
+            # Auto-detection for Sample SSU:
+            # Priority 3: Primary "Selected SSU" layer (excluding ref, additional, replacement)
+            # Priority 2: Any "Selected SSU" layer (excluding ref)
+            # Priority 1: Fallback to any layer with "sample" (excluding ref)
+            if "ref" not in lyr_name_lower:
                 if (
-                    ("selected ssu" in lyr_name_lower or "sample" in lyr_name_lower)
-                    and "ref" not in lyr_name_lower
+                    "selected ssu" in lyr_name_lower
+                    and "additional" not in lyr_name_lower
+                    and "replacement" not in lyr_name_lower
                 ):
-                    sample_match_idx = idx
+                    if sample_priority < 3:
+                        sample_match_idx = idx
+                        sample_priority = 3
+                elif "selected ssu" in lyr_name_lower:
+                    if sample_priority < 2:
+                        sample_match_idx = idx
+                        sample_priority = 2
+                elif "sample" in lyr_name_lower:
+                    if sample_priority < 1:
+                        sample_match_idx = idx
+                        sample_priority = 1
 
         if reset_selection:
             self.comboxSample.setCurrentIndex(-1)

@@ -650,8 +650,9 @@ class LoaderDialog(QDialog, FORM_CLASS):
                     single_psu_name = psu_names[0]
                 elif len(psu_names) > 1:
                     chosen = self.choose_psus(psu_names)
-                    if chosen:
-                        selected_psus_override = chosen
+                    if chosen is None:
+                        return
+                    selected_psus_override = chosen
 
         reply = (single_psu_only or bool(selected_psus_override))
 
@@ -665,7 +666,23 @@ class LoaderDialog(QDialog, FORM_CLASS):
         except Exception:
             CloudConverter = None
 
+        cache_dir = base_path / "Package for Qfield" / ".basemap_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
         mbtiles_cache = {}
+
+        import uuid
+        temp_proj_dir = base_path / ".temp_export"
+        temp_proj_dir.mkdir(parents=True, exist_ok=True)
+        template_proj_path = str(temp_proj_dir / f"template_{uuid.uuid4().hex[:6]}.qgs")
+
+        orig_proj_filename = project.fileName()
+        orig_paths_setting = project.readBoolEntry("Paths", "/Absolute", False)[0]
+        project.writeEntry("Paths", "/Absolute", True)
+        try:
+            project.write(template_proj_path)
+        finally:
+            project.setFileName(orig_proj_filename)
+            project.writeEntry("Paths", "/Absolute", orig_paths_setting)
 
         def run_convert(inner_folder_name, psu_filter=None, progress_callback=None):
             def set_prog(val, text=""):
@@ -684,21 +701,18 @@ class LoaderDialog(QDialog, FORM_CLASS):
             target_dir = target_root / inner_folder_name
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            import tempfile
-            import uuid
-            orig_proj_filename = project.fileName()
-            temp_proj_path = os.path.join(tempfile.gettempdir(), f"geofasu_temp_{uuid.uuid4().hex[:6]}.qgs")
-            project.write(temp_proj_path)
-            project.setFileName(orig_proj_filename)
-
             temp_project = QgsProject()
-            temp_project.read(temp_proj_path)
+            temp_project.read(template_proj_path)
             temp_project.setFileName(str(target_dir / f"{inner_folder_name}.qgs"))
+            temp_project.writeEntry("Paths", "/Absolute", False)
 
             ref_extent = None
             ref_layer_obj = None
+            root = temp_project.layerTreeRoot()
+            base_layer_for_mask = None
+            matching_features = []
+
             if psu_filter:
-                root = temp_project.layerTreeRoot()
                 ref_group = root.findGroup("Reference Layer")
                 if ref_group:
                     for child in ref_group.children():
@@ -721,9 +735,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                             break
 
                 base_group = root.findGroup("Base Layer")
-                base_layer_for_mask = None
-                matching_features = []
-
                 if base_group:
                     for child in base_group.children():
                         if isinstance(child, QgsLayerTreeLayer) and child.layer():
@@ -847,6 +858,50 @@ class LoaderDialog(QDialog, FORM_CLASS):
                             QgsVectorFileWriter
                         )
 
+                        mask_key = None
+                        if mask_features:
+                            mask_key = "_".join(sorted(str(f["name"] if "name" in [fld.name() for fld in base_layer_for_mask.fields()] else f.id()) for f in mask_features))
+
+                        dest_mbtiles_path = str(target_dir / f"{raster_layer.name()}.mbtiles")
+
+                        safe_mask_key = re.sub(r'[^a-zA-Z0-9_\-]', '_', str(mask_key or "default"))
+                        cache_mbtiles_path = cache_dir / f"{mun}_{raster_layer.name()}_{safe_mask_key}.mbtiles"
+
+                        def is_cache_valid(cp, sp):
+                            if not cp.exists() or cp.stat().st_size == 0:
+                                return False
+                            if os.path.exists(sp):
+                                try:
+                                    if cp.stat().st_mtime < os.path.getmtime(sp):
+                                        return False
+                                except Exception:
+                                    pass
+                            return True
+
+                        # Fast path 1: Reuse already-clipped MBTiles if identical mask features were processed in this batch
+                        if mask_key and mask_key in mbtiles_cache and os.path.exists(mbtiles_cache[mask_key]):
+                            set_prog(35, "Reusing cached basemap...")
+                            shutil.copyfile(mbtiles_cache[mask_key], dest_mbtiles_path)
+                            new_raster = QgsRasterLayer(dest_mbtiles_path, raster_layer.name(), "gdal")
+                            if new_raster.isValid():
+                                temp_project.addMapLayer(new_raster, False)
+                                basemap_group.insertLayer(0, new_raster)
+                                temp_project.removeMapLayer(raster_layer.id())
+                            break
+
+                        # Fast path 2: Reuse from persistent disk cache
+                        elif is_cache_valid(cache_mbtiles_path, raster_layer.source()):
+                            set_prog(35, "Loading basemap from cache...")
+                            shutil.copyfile(str(cache_mbtiles_path), dest_mbtiles_path)
+                            if mask_key:
+                                mbtiles_cache[mask_key] = dest_mbtiles_path
+                            new_raster = QgsRasterLayer(dest_mbtiles_path, raster_layer.name(), "gdal")
+                            if new_raster.isValid():
+                                temp_project.addMapLayer(new_raster, False)
+                                basemap_group.insertLayer(0, new_raster)
+                                temp_project.removeMapLayer(raster_layer.id())
+                            break
+
                         raster_crs = raster_layer.crs()
                         base_crs = base_layer_for_mask.crs()
                         xform = None
@@ -879,23 +934,6 @@ class LoaderDialog(QDialog, FORM_CLASS):
                             QgsVectorFileWriter.writeAsVectorFormat(
                                 mask_memory_layer, temp_mask_path, "UTF-8", raster_crs, "GPKG"
                             )
-
-                            mask_key = None
-                            if mask_features:
-                                mask_key = "_".join(sorted(str(f["name"] if "name" in [fld.name() for fld in base_layer_for_mask.fields()] else f.id()) for f in mask_features))
-
-                            dest_mbtiles_path = str(target_dir / f"{raster_layer.name()}.mbtiles")
-
-                            # Fast path: Reuse already-clipped MBTiles if identical mask features were processed in this batch
-                            if mask_key and mask_key in mbtiles_cache and os.path.exists(mbtiles_cache[mask_key]):
-                                set_prog(35, "Reusing cached basemap...")
-                                shutil.copyfile(mbtiles_cache[mask_key], dest_mbtiles_path)
-                                new_raster = QgsRasterLayer(dest_mbtiles_path, raster_layer.name(), "gdal")
-                                if new_raster.isValid():
-                                    temp_project.addMapLayer(new_raster, False)
-                                    basemap_group.insertLayer(0, new_raster)
-                                    temp_project.removeMapLayer(raster_layer.id())
-                                break
 
                             extent = mask_memory_layer.extent()
                             bounds = [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
@@ -937,7 +975,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                         dest_mbtiles_path,
                                         temp_tif_path,
                                         format='MBTILES',
-                                        creationOptions=['TILE_FORMAT=JPEG', 'QUALITY=80', 'ZOOM_LEVEL_STRATEGY=AUTO', 'NUM_THREADS=ALL_CPUS'],
+                                        creationOptions=['TILE_FORMAT=JPEG', 'QUALITY=80', 'ZOOM_LEVEL_STRATEGY=AUTO'],
                                         callback=trans_cb
                                     )
 
@@ -954,6 +992,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
                                         if mask_key and os.path.exists(dest_mbtiles_path):
                                             mbtiles_cache[mask_key] = dest_mbtiles_path
+                                            try:
+                                                shutil.copyfile(dest_mbtiles_path, str(cache_mbtiles_path))
+                                            except Exception as ce:
+                                                print(f"Warning: Failed to save to basemap cache: {ce}")
 
                                         new_raster = QgsRasterLayer(dest_mbtiles_path, raster_layer.name(), "gdal")
                                         if new_raster.isValid():
@@ -977,109 +1019,116 @@ class LoaderDialog(QDialog, FORM_CLASS):
                         break
 
             set_prog(65, "Packaging QField project...")
-            try:
-                cc = CloudConverter(temp_project, str(target_dir))
-                setattr(cc, "open_project_after_convert", False)
-                cc.total_progress_updated.connect(
-                    lambda cur, tot, msg: set_prog(int(65 + (cur / max(tot, 1)) * 30), "Writing QField project...")
-                )
-                cc.convert()
-            finally:
-                try:
-                    if os.path.exists(temp_proj_path):
-                        os.remove(temp_proj_path)
-                except Exception:
-                    pass
+            cc = CloudConverter(temp_project, str(target_dir))
+            setattr(cc, "open_project_after_convert", False)
+            cc.total_progress_updated.connect(
+                lambda cur, tot, msg: set_prog(int(65 + (cur / max(tot, 1)) * 30), "Writing QField project...")
+            )
+            cc.convert()
 
             set_prog(100, "Done")
             return target_dir
 
-        if not reply:
+        try:
+            if not reply:
+                self.genrate.setEnabled(False)
+                self.loadbtn.setEnabled(False)
+                self.progbar.setValue(10)
+                self.progbar.setFormat("Exporting... %p%")
+                QCoreApplication.processEvents()
+                inner_name = f"{nos}_{mun}_Selected SSU_{rep}"
+                try:
+                    def make_single_cb(p):
+                        self.progbar.setValue(p)
+                        QCoreApplication.processEvents()
+
+                    out_target = run_convert(inner_name, progress_callback=make_single_cb)
+                    self.progbar.setValue(100)
+                    self.progbar.setFormat("%p%")
+                    self.genrate.setEnabled(False)
+                    self.loadbtn.setEnabled(True)
+                    self.log(f"Successfully generated QField project: {inner_name}! ✓", "SUCCESS")
+                    self.log(f"Export Location: {out_target}", "INFO")
+                except Exception as e:
+                    self.progbar.setValue(0)
+                    self.progbar.setFormat("%p%")
+                    self.genrate.setEnabled(True)
+                    self.loadbtn.setEnabled(True)
+                    self.log(f"Export Failed: {str(e)}", "ERROR")
+                return
+
+            if not layer:
+                self.log("Reference layer 'Selected SSU_Ref' not found in project.", "ERROR")
+                return
+
+            idx = layer.fields().lookupField("PSU_Name")
+            if idx == -1:
+                self.log("Field 'PSU_Name' not found in Selected SSU_Ref.", "ERROR")
+                return
+
+            psu_names = sorted({self._clean(str(f[idx])) for f in layer.getFeatures() if f[idx] not in (None, "")})
+            if not psu_names:
+                self.log("No PSU_Name values found in Reference layer.", "ERROR")
+                return
+
+            if single_psu_only:
+                selected_psus = [single_psu_name]
+            else:
+                selected_psus = selected_psus_override if selected_psus_override else psu_names
+
+            selected_psus = sorted(selected_psus)
+
             self.genrate.setEnabled(False)
             self.loadbtn.setEnabled(False)
-            self.progbar.setValue(10)
-            self.progbar.setFormat("Exporting... %p%")
+            self.progbar.setValue(0)
             QCoreApplication.processEvents()
-            inner_name = f"{nos}_{mun}_Selected SSU_{rep}"
-            try:
-                def make_single_cb(p):
-                    self.progbar.setValue(p)
-                    QCoreApplication.processEvents()
 
-                out_target = run_convert(inner_name, progress_callback=make_single_cb)
-                self.progbar.setValue(100)
-                self.progbar.setFormat("%p%")
-                self.genrate.setEnabled(False)
-                self.loadbtn.setEnabled(True)
-                self.log(f"Successfully generated QField project: {inner_name}! ✓", "SUCCESS")
-                self.log(f"Export Location: {out_target}", "INFO")
-            except Exception as e:
-                self.progbar.setValue(0)
-                self.progbar.setFormat("%p%")
+            success, fail = 0, 0
+            failed_errors = []
+            total = len(selected_psus)
+            for i, psu in enumerate(selected_psus):
+                def make_cb(index, psu_name):
+                    def cb(p):
+                        overall = int(((index + (p / 100)) / total) * 100)
+                        self.progbar.setValue(overall)
+                        self.progbar.setFormat(f"Exporting {psu_name} ({index+1}/{total}): {overall}%")
+                        QCoreApplication.processEvents()
+                    return cb
+
+                inner_folder = f"{nos}_{mun}_Selected SSU_{rep}_{psu}"
+                try:
+                    _ = run_convert(inner_folder, psu_filter=psu, progress_callback=make_cb(i, psu))
+                    success += 1
+                except Exception as e:
+                    fail += 1
+                    err_str = f"PSU '{psu}': {str(e)}"
+                    failed_errors.append(err_str)
+                    import traceback
+                    print(f"Export error for {psu}:\n{traceback.format_exc()}")
+
+            self.progbar.setValue(100)
+            self.progbar.setFormat("%p%")
+            self.loadbtn.setEnabled(True)
+            if fail > 0:
                 self.genrate.setEnabled(True)
-                self.loadbtn.setEnabled(True)
-                self.log(f"Export Failed: {str(e)}", "ERROR")
-            return
-
-        if not layer:
-            self.log("Reference layer 'Selected SSU_Ref' not found in project.", "ERROR")
-            return
-
-        idx = layer.fields().lookupField("PSU_Name")
-        if idx == -1:
-            self.log("Field 'PSU_Name' not found in Selected SSU_Ref.", "ERROR")
-            return
-
-        psu_names = sorted({self._clean(str(f[idx])) for f in layer.getFeatures() if f[idx] not in (None, "")})
-        if not psu_names:
-            self.log("No PSU_Name values found in Reference layer.", "ERROR")
-            return
-
-        if single_psu_only:
-            selected_psus = [single_psu_name]
-        else:
-            selected_psus = selected_psus_override if selected_psus_override else psu_names
-
-        self.genrate.setEnabled(False)
-        self.loadbtn.setEnabled(False)
-        self.progbar.setValue(0)
-        QCoreApplication.processEvents()
-
-        success, fail = 0, 0
-        failed_errors = []
-        total = len(selected_psus)
-        for i, psu in enumerate(selected_psus):
-            def make_cb(index, psu_name):
-                def cb(p):
-                    overall = int(((index + (p / 100)) / total) * 100)
-                    self.progbar.setValue(overall)
-                    self.progbar.setFormat(f"Exporting {psu_name} ({index+1}/{total}): {overall}%")
-                    QCoreApplication.processEvents()
-                return cb
-
-            inner_folder = f"{nos}_{mun}_Selected SSU_{rep}_{psu}"
+                self.log("STATUS: FAILED ✗", "ERROR")
+                err_msg = "; ".join(failed_errors[:4])
+                self.log(f"Export Issues: Generated {success} of {total} QField Project(s). Errors: {err_msg}", "ERROR")
+            else:
+                self.genrate.setEnabled(False)
+                self.log("STATUS: COMPLETED ✓", "SUCCESS")
+                self.log(f"Export Finished: Successfully generated all {success} QField Project(s)! ✓", "SUCCESS")
+        finally:
             try:
-                _ = run_convert(inner_folder, psu_filter=psu, progress_callback=make_cb(i, psu))
-                success += 1
-            except Exception as e:
-                fail += 1
-                err_str = f"PSU '{psu}': {str(e)}"
-                failed_errors.append(err_str)
-                import traceback
-                print(f"Export error for {psu}:\n{traceback.format_exc()}")
-
-        self.progbar.setValue(100)
-        self.progbar.setFormat("%p%")
-        self.loadbtn.setEnabled(True)
-        if fail > 0:
-            self.genrate.setEnabled(True)
-            self.log("STATUS: FAILED ✗", "ERROR")
-            err_msg = "; ".join(failed_errors[:4])
-            self.log(f"Export Issues: Generated {success} of {total} QField Project(s). Errors: {err_msg}", "ERROR")
-        else:
-            self.genrate.setEnabled(False)
-            self.log("STATUS: COMPLETED ✓", "SUCCESS")
-            self.log(f"Export Finished: Successfully generated all {success} QField Project(s)! ✓", "SUCCESS")
+                if os.path.exists(template_proj_path):
+                    os.remove(template_proj_path)
+            except Exception:
+                pass
+            try:
+                if temp_proj_dir.exists() and not any(temp_proj_dir.iterdir()):
+                    temp_proj_dir.rmdir()
+            except Exception:
+                pass
 
     def choose_psus(self, psu_list):
         """Displays selection dialog for PSUs."""
