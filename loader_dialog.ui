@@ -6,160 +6,200 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>450</width>
-    <height>380</height>
+    <width>880</width>
+    <height>500</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>360</width>
+    <width>0</width>
     <height>0</height>
    </size>
   </property>
   <property name="windowTitle">
    <string>GeoFASU_Mod - Load and Generate QField</string>
   </property>
-  <layout class="QVBoxLayout" name="mainLayout">
+  <layout class="QVBoxLayout" name="rootLayout">
    <property name="spacing">
     <number>8</number>
    </property>
    <property name="leftMargin">
-    <number>18</number>
+    <number>16</number>
    </property>
    <property name="topMargin">
     <number>12</number>
    </property>
    <property name="rightMargin">
-    <number>18</number>
+    <number>16</number>
    </property>
    <property name="bottomMargin">
     <number>12</number>
    </property>
    <item>
-    <widget class="QLabel" name="label">
-     <property name="text">
-      <string>Reference Directory:</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QgsFileWidget" name="fileWidget">
-     <property name="storageMode">
-      <enum>QgsFileWidget::GetDirectory</enum>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QLabel" name="label_4">
-     <property name="text">
-      <string>Select Type of Survey:</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QComboBox" name="comboxNOS"/>
-   </item>
-   <item>
-    <widget class="QLabel" name="lanb">
-     <property name="text">
-      <string>Select City/Municipality:</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QComboBox" name="comboxMun"/>
-   </item>
-   <item>
-    <widget class="QLabel" name="lanb_2">
-     <property name="text">
-      <string>Select Replicate Number:</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QComboBox" name="comboxRep"/>
-   </item>
-   <item>
-    <widget class="QPushButton" name="loadbtn">
-     <property name="minimumSize">
-      <size>
-       <width>0</width>
-       <height>36</height>
-      </size>
-     </property>
-     <property name="cursor">
-      <cursorShape>PointingHandCursor</cursorShape>
-     </property>
-     <property name="text">
-      <string>Load Layers</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QProgressBar" name="progbar">
-     <property name="value">
-      <number>0</number>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="bottomButtonsLayout">
+    <layout class="QHBoxLayout" name="mainHorizontalLayout">
      <property name="spacing">
-      <number>10</number>
+      <number>14</number>
+     </property>
+     <!-- LEFT COLUMN: Logs & Alerts -->
+   <item>
+    <layout class="QVBoxLayout" name="leftLayout">
+     <property name="spacing">
+      <number>6</number>
      </property>
      <item>
-      <widget class="QPushButton" name="aplqml">
-       <property name="minimumSize">
-        <size>
-         <width>0</width>
-         <height>36</height>
-        </size>
-       </property>
-       <property name="cursor">
-        <cursorShape>PointingHandCursor</cursorShape>
-       </property>
+      <widget class="QLabel" name="label_logs">
        <property name="text">
-        <string>Apply Style</string>
+        <string>Execution Logs &amp; Alerts:</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="genrate">
-       <property name="minimumSize">
-        <size>
-         <width>0</width>
-         <height>36</height>
-        </size>
+      <widget class="QPlainTextEdit" name="logsTextEdit">
+       <property name="readOnly">
+        <bool>true</bool>
        </property>
-       <property name="cursor">
-        <cursorShape>PointingHandCursor</cursorShape>
-       </property>
-       <property name="text">
-        <string>Generate QField Project</string>
+       <property name="placeholderText">
+        <string>Click 'Load Layers' to begin loading data...</string>
        </property>
       </widget>
      </item>
     </layout>
    </item>
+   <!-- RIGHT COLUMN: Controls -->
    <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
+    <layout class="QVBoxLayout" name="rightLayout">
+     <property name="spacing">
+      <number>8</number>
      </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>10</height>
-      </size>
-     </property>
-    </spacer>
+     <item>
+      <widget class="QLabel" name="label">
+       <property name="text">
+        <string>Reference Directory:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QgsFileWidget" name="fileWidget">
+       <property name="storageMode">
+        <enum>QgsFileWidget::GetDirectory</enum>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="label_4">
+       <property name="text">
+        <string>Select Type of Survey:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboxNOS"/>
+     </item>
+     <item>
+      <widget class="QLabel" name="lanb">
+       <property name="text">
+        <string>Select City/Municipality:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboxMun"/>
+     </item>
+     <item>
+      <widget class="QLabel" name="lanb_2">
+       <property name="text">
+        <string>Select Replicate Number:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboxRep"/>
+     </item>
+     <item>
+      <widget class="QPushButton" name="loadbtn">
+       <property name="minimumSize">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+       <property name="cursor">
+        <cursorShape>PointingHandCursor</cursorShape>
+       </property>
+       <property name="text">
+        <string>Load Layers</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="bottomButtonsLayout">
+       <property name="spacing">
+        <number>10</number>
+       </property>
+       <item>
+        <widget class="QPushButton" name="aplqml">
+         <property name="minimumSize">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+         <property name="cursor">
+          <cursorShape>PointingHandCursor</cursorShape>
+         </property>
+         <property name="text">
+          <string>Apply Style</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="genrate">
+         <property name="minimumSize">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+         <property name="cursor">
+          <cursorShape>PointingHandCursor</cursorShape>
+         </property>
+         <property name="text">
+          <string>Generate QField Project</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <spacer name="verticalSpacer">
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>20</width>
+         <height>10</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
    </item>
   </layout>
- </widget>
- <customwidgets>
+ </item>
+ <item>
+   <widget class="QProgressBar" name="progbar">
+       <property name="value">
+        <number>0</number>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignCenter</set>
+       </property>
+      </widget>
+  </item>
+</layout>
+</widget>
+<customwidgets>
   <customwidget>
    <class>QgsFileWidget</class>
    <extends>QWidget</extends>

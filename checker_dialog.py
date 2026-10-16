@@ -9,7 +9,7 @@ from collections import Counter
 
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
-from qgis.PyQt.QtCore import Qt, QCoreApplication, QVariant
+from qgis.PyQt.QtCore import Qt, QCoreApplication, QVariant, pyqtSignal
 from qgis.core import (
     QgsProject,
     QgsVectorLayer,
@@ -124,6 +124,9 @@ def apply_error_symbology(layer):
 
 
 class CheckerDialog(QDialog, FORM_CLASS):
+    quality_check_passed = pyqtSignal(str)
+    quality_check_failed = pyqtSignal()
+
     def __init__(self, iface=None, parent=None):
         super().__init__(parent)
         self.iface = iface
@@ -132,6 +135,9 @@ class CheckerDialog(QDialog, FORM_CLASS):
         setup_dialog_logo(self)
 
         self.closeButton.setProperty("secondary", True)
+        if hasattr(self, 'openFolderButton'):
+            self.openFolderButton.setProperty("secondary", True)
+            self.openFolderButton.clicked.connect(self.open_default_folder)
         self.progressBar.setValue(0)
         self.comboxSample.setPlaceholderText("-- Select Sample SSU Layer --")
 
@@ -145,6 +151,21 @@ class CheckerDialog(QDialog, FORM_CLASS):
         # Signal connections
         self.runButton.clicked.connect(self.run_checker)
         self.closeButton.clicked.connect(self.close)
+        self.comboxSample.currentIndexChanged.connect(self.on_sample_changed)
+
+    def open_default_folder(self):
+        """Opens the default project folder in Windows File Explorer."""
+        default_dir = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+        os.makedirs(default_dir, exist_ok=True)
+        try:
+            os.startfile(default_dir)
+        except Exception:
+            from qgis.PyQt.QtGui import QDesktopServices
+            from qgis.PyQt.QtCore import QUrl
+            QDesktopServices.openUrl(QUrl.fromLocalFile(default_dir))
+
+    def on_sample_changed(self):
+        self.quality_check_failed.emit()
 
     def showEvent(self, event):
         """Refreshes layer list when dialog is shown."""
@@ -200,17 +221,30 @@ class CheckerDialog(QDialog, FORM_CLASS):
 
         self.comboxSample.blockSignals(False)
 
+    def log(self, message: str, level: str = "INFO"):
+        """Appends a line of text to the logs widget with level indicator."""
+        prefix = {
+            "INFO": "",
+            "SUCCESS": "✓ ",
+            "WARNING": "⚠ ",
+            "ERROR": "✗ ",
+        }.get(level.upper(), "")
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.appendPlainText(f"{prefix}{message}")
+            self.logsTextEdit.verticalScrollBar().setValue(
+                self.logsTextEdit.verticalScrollBar().maximum()
+            )
+
     def run_checker(self):
         """Executes validation on Sample SSU."""
+        self.logsTextEdit.clear()
+        self.log("STATUS: RUNNING...", "INFO")
         sample_layer_id = self.comboxSample.currentData()
         sample_layer = QgsProject.instance().mapLayer(sample_layer_id) if sample_layer_id else None
 
         if not sample_layer or not sample_layer.isValid():
-            QMessageBox.warning(
-                self,
-                "Missing Sample SSU",
-                "Please select a valid Sample SSU layer from the dropdown list.",
-            )
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log("Please select a valid Sample SSU layer from the dropdown list.", "WARNING")
             self.progressBar.setValue(0)
             return
 
@@ -260,11 +294,9 @@ class CheckerDialog(QDialog, FORM_CLASS):
                 missing_core.append("Update Codes")
 
             if missing_core:
-                QMessageBox.warning(
-                    self,
-                    "Missing Columns",
-                    f"Sample SSU layer '{sample_layer.name()}' is missing required column(s):\n"
-                    f"{', '.join(missing_core)}.",
+                self.log(
+                    f"Sample SSU layer '{sample_layer.name()}' is missing required column(s): {', '.join(missing_core)}.",
+                    "ERROR"
                 )
                 self.progressBar.setValue(0)
                 return
@@ -451,28 +483,40 @@ class CheckerDialog(QDialog, FORM_CLASS):
                     self.iface.mapCanvas().refresh()
 
             if err_count == 0:
-                QMessageBox.information(
-                    self,
-                    "No Errors Found",
-                    f"Checker completed successfully!\n\nAll {feature_count} records in '{sample_layer.name()}' passed validation.",
+                self.log("STATUS: PASSED ✓", "SUCCESS")
+                self.log(
+                    f"Checker completed successfully! All {feature_count} records in '{sample_layer.name()}' passed validation. ✓",
+                    "SUCCESS"
                 )
                 self.progressBar.setValue(0)
+                self.quality_check_passed.emit(sample_layer.id())
             else:
-                QMessageBox.warning(
-                    self,
-                    "Validation Errors Found",
-                    f"Found {err_count} error feature(s) out of {feature_count} in '{sample_layer.name()}'.\n\n"
+                self.log(f"STATUS: FAILED ✗ ({err_count} errors found)", "ERROR")
+                self.log(
+                    f"Validation Errors Found: Found {err_count} error feature(s) out of {feature_count} in '{sample_layer.name()}'.",
+                    "WARNING"
+                )
+                self.log(
                     f"A new temporary layer '{created_temp_layer.name()}' has been created in QGIS with the error records.",
+                    "INFO"
                 )
                 self.progressBar.setValue(0)
+                self.quality_check_failed.emit()
 
         except Exception as e:
-            QMessageBox.critical(
-                self, "Unexpected Error", f"An error occurred during checking:\n{e}"
-            )
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log(f"An error occurred during checking: {e}", "ERROR")
+            self.quality_check_failed.emit()
             self.progressBar.setValue(0)
         finally:
             self.runButton.setEnabled(True)
+            self.progressBar.setValue(0)
+
+    def clear_logs(self):
+        """Clears the execution logs and resets progress bar."""
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.clear()
+        if hasattr(self, 'progressBar') and self.progressBar:
             self.progressBar.setValue(0)
 
     def reset_fields(self):
@@ -480,6 +524,8 @@ class CheckerDialog(QDialog, FORM_CLASS):
         self.progressBar.setValue(0)
         self.runButton.setEnabled(True)
         self.populate_layers(reset_selection=True)
+        self.clear_logs()
+        self.quality_check_failed.emit()
 
     def closeEvent(self, event):
         """Clean close event, resets fields to default."""

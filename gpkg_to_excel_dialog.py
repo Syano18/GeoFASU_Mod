@@ -37,12 +37,80 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
         # Signals for dropdowns
         self.fileWidget.fileChanged.connect(self.populate_nos_list)
         self.comboxNOS.currentIndexChanged.connect(self.update_mun_list)
+        self.comboxMun.currentIndexChanged.connect(self.check_buttons_state)
 
         # Default Reference Directory
         default_ref = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
         self.fileWidget.setFilePath(default_ref)
         if os.path.isdir(default_ref):
             self.populate_nos_list()
+        self.check_buttons_state()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.check_buttons_state()
+
+    def check_buttons_state(self):
+        """Updates the enabled states and tooltips for both Merge and Export to Excel buttons."""
+        self.check_merge_state()
+        self.check_export_state()
+
+    def check_merge_state(self):
+        """Enables the Merge button only if there is at least one .gpkg file inside the city/mun folder in Validation Output."""
+        base_dir = self.fileWidget.filePath().strip() if hasattr(self, 'fileWidget') else ""
+        nos = self.comboxNOS.currentText().strip() if hasattr(self, 'comboxNOS') else ""
+        mun = self.comboxMun.currentText().strip() if hasattr(self, 'comboxMun') else ""
+
+        has_gpkg = False
+        if base_dir and nos and mun:
+            mun_dir = os.path.join(base_dir, 'Validation Output', nos, mun)
+            if os.path.isdir(mun_dir):
+                for root, _, files in os.walk(mun_dir):
+                    if any(f.lower().endswith('.gpkg') for f in files):
+                        has_gpkg = True
+                        break
+
+        self.mergeBtn.setEnabled(has_gpkg)
+        if has_gpkg:
+            self.mergeBtn.setToolTip("Click to merge GeoPackage files for the selected City/Municipality into Filepinas.")
+        elif not mun:
+            self.mergeBtn.setToolTip("Please select a City/Municipality with at least one .gpkg file in Validation Output to enable Merge.")
+        else:
+            self.mergeBtn.setToolTip(f"No .gpkg files found in 'Validation Output/{nos}/{mun}'.")
+
+    def check_export_state(self):
+        """Enables the Export to Excel button if there is at least one merged .gpkg file inside the Filepinas survey folder."""
+        base_dir = self.fileWidget.filePath().strip() if hasattr(self, 'fileWidget') else ""
+        nos = self.comboxNOS.currentText().strip() if hasattr(self, 'comboxNOS') else ""
+
+        has_gpkg = False
+        if base_dir and nos:
+            filepinas_survey_dir = os.path.join(base_dir, 'Filepinas', nos)
+            if os.path.isdir(filepinas_survey_dir):
+                for root, _, files in os.walk(filepinas_survey_dir):
+                    if any(f.lower().endswith('.gpkg') for f in files):
+                        has_gpkg = True
+                        break
+
+        self.exportBtn.setEnabled(has_gpkg)
+        if has_gpkg:
+            self.exportBtn.setToolTip("Click to export all merged GeoPackage files in Filepinas to 032_GEOMS_Excel_Upload.xlsx.")
+        else:
+            self.exportBtn.setToolTip("Please merge all Sample SSU files across all cities/municipalities first.")
+
+    def log(self, message: str, level: str = "INFO"):
+        """Appends a line of text to the logs widget with level indicator."""
+        prefix = {
+            "INFO": "",
+            "SUCCESS": "✓ ",
+            "WARNING": "⚠ ",
+            "ERROR": "✗ ",
+        }.get(level.upper(), "")
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.appendPlainText(f"{prefix}{message}")
+            self.logsTextEdit.verticalScrollBar().setValue(
+                self.logsTextEdit.verticalScrollBar().maximum()
+            )
 
     def populate_nos_list(self):
         self.comboxNOS.blockSignals(True)
@@ -66,6 +134,7 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
 
         self.comboxNOS.blockSignals(False)
         self.comboxMun.blockSignals(False)
+        self.check_buttons_state()
 
     def update_mun_list(self):
         self.comboxMun.blockSignals(True)
@@ -85,24 +154,24 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                 self.comboxMun.setCurrentIndex(-1)
 
         self.comboxMun.blockSignals(False)
+        self.check_buttons_state()
 
     def run_merge(self):
+        self.logsTextEdit.clear()
+        self.log("STATUS: MERGING...", "INFO")
         base_dir = self.fileWidget.filePath().strip()
         nos = self.comboxNOS.currentText().strip()
         mun = self.comboxMun.currentText().strip()
 
         if not all([base_dir, nos, mun]):
-            QMessageBox.warning(
-                self,
-                "Missing Input",
-                "Please ensure all fields are selected (Directory, Survey, and Municipality).",
-            )
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log("Please ensure all fields are selected (Directory, Survey, and Municipality).", "WARNING")
             self.progressBar.setValue(0)
             return
 
         mun_dir = os.path.join(base_dir, 'Validation Output', nos, mun)
         if not os.path.isdir(mun_dir):
-            QMessageBox.warning(self, "Directory Not Found", f"The directory does not exist:\n{mun_dir}")
+            self.log(f"The directory does not exist: {mun_dir}", "WARNING")
             self.progressBar.setValue(0)
             return
         
@@ -119,10 +188,9 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                         rep_gpkgs[rep_no].append(gpkg_path)
                         
         if not rep_gpkgs:
-            QMessageBox.warning(
-                self,
-                "No GeoPackage Found",
-                f"No matching .gpkg files (with Replicate Number in filename/path) were found in:\n{mun_dir}"
+            self.log(
+                f"No matching .gpkg files (with Replicate Number in filename/path) were found in: {mun_dir}",
+                "WARNING"
             )
             self.progressBar.setValue(0)
             return
@@ -130,7 +198,7 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
         filepinas_dir = os.path.join(base_dir, 'Filepinas', nos, mun)
         os.makedirs(filepinas_dir, exist_ok=True)
         
-        # Pre-flight check: ensure output files are not locked, and ask for overwrite if any exist
+        # Pre-flight check: ensure output files are not locked
         existing_files = []
         locked_files = []
         
@@ -147,35 +215,18 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                     locked_files.append(merged_gpkg_path)
                         
         if locked_files:
-            locked_msg = "\n".join([os.path.basename(f) for f in locked_files])
-            QMessageBox.critical(
-                self,
-                "Files In Use",
-                f"The following GeoPackage files are currently open or locked by another program (like QGIS).\n\nPlease close them and try again:\n\n{locked_msg}"
-            )
+            locked_msg = ", ".join([os.path.basename(f) for f in locked_files])
+            self.log(f"The following GeoPackage files are currently open or locked: {locked_msg}. Please close them and try again.", "ERROR")
             self.progressBar.setValue(0)
             return
             
         if existing_files:
-            reply = QMessageBox.question(
-                self,
-                "Overwrite Files?",
-                "Some merged GeoPackage files already exist in Filepinas. Do you want to overwrite them?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if reply == QMessageBox.No:
-                self.progressBar.setValue(0)
-                return
+            self.log(f"Existing merged GeoPackage files detected in Filepinas ({len(existing_files)} file(s)). Overwriting...", "INFO")
             for f in existing_files:
                 try:
                     os.remove(f)
                 except Exception as e:
-                    QMessageBox.critical(
-                        self,
-                        "Error",
-                        f"Failed to delete existing file before overwriting:\n{f}\nError: {e}"
-                    )
+                    self.log(f"Failed to delete existing file before overwriting: {f} (Error: {e})", "ERROR")
                     self.progressBar.setValue(0)
                     return
 
@@ -248,31 +299,27 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                 
             self.progressBar.setValue(100)
             QCoreApplication.processEvents()
-            QMessageBox.information(
-                self,
-                "Success",
-                f"Data successfully merged and exported to Filepinas folder:\n{filepinas_dir}"
-            )
+            self.log("STATUS: COMPLETED ✓", "SUCCESS")
+            self.log(f"Data successfully merged and exported to Filepinas folder: {filepinas_dir} ✓", "SUCCESS")
             self.progressBar.setValue(0)
 
         except Exception as e:
-            QMessageBox.critical(self, "An Unexpected Error Occurred", f"Error: {e}")
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log(f"An unexpected error occurred during merge: {e}", "ERROR")
             self.progressBar.setValue(0)
         finally:
-            self.mergeBtn.setEnabled(True)
-            self.exportBtn.setEnabled(True)
+            self.check_buttons_state()
             self.progressBar.setValue(0)
 
     def run_export_excel(self):
+        self.logsTextEdit.clear()
+        self.log("STATUS: EXPORTING...", "INFO")
         base_dir = self.fileWidget.filePath().strip()
         nos = self.comboxNOS.currentText().strip()
 
         if not all([base_dir, nos]):
-            QMessageBox.warning(
-                self,
-                "Missing Input",
-                "Please ensure Reference Directory and Type of Survey are selected.",
-            )
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log("Please ensure Reference Directory and Type of Survey are selected.", "WARNING")
             self.progressBar.setValue(0)
             return
 
@@ -284,27 +331,21 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
         if os.path.isdir(filepinas_survey_dir):
             for root, dirs, files in os.walk(filepinas_survey_dir):
                 for file in files:
-                    if file.endswith('.gpkg'):
+                    if file.lower().endswith('.gpkg'):
                         gpkg_files.append(os.path.join(root, file))
 
         if not gpkg_files:
-            # Check if Validation Output exists to give a clear informative message
             val_survey_dir = os.path.join(base_dir, 'Validation Output', nos)
             val_has_files = os.path.isdir(val_survey_dir) and any(
-                f.endswith('.gpkg') for _, _, files in os.walk(val_survey_dir) for f in files
+                f.lower().endswith('.gpkg') for _, _, files in os.walk(val_survey_dir) for f in files
             )
             if val_has_files:
-                QMessageBox.warning(
-                    self,
-                    "Merge Required",
-                    f"No merged GeoPackage files found in:\n{filepinas_survey_dir}\n\nPlease click 'Merge' for the municipalities first before exporting to Excel."
+                self.log(
+                    "Please merge all Sample SSU files across all cities/municipalities first before exporting to Excel.",
+                    "WARNING"
                 )
             else:
-                QMessageBox.warning(
-                    self,
-                    "No GeoPackage Found",
-                    f"No GeoPackage files found in:\n{filepinas_survey_dir}"
-                )
+                self.log(f"No GeoPackage files found in: {filepinas_survey_dir}", "WARNING")
             self.progressBar.setValue(0)
             return
 
@@ -314,39 +355,21 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
         excel_name = "032_GEOMS_Excel_Upload.xlsx"
         excel_path = os.path.join(excel_dir, excel_name)
 
-        # Pre-flight check: ensure excel output file is not locked, and ask for overwrite if it exists
+        # Pre-flight check: ensure excel output file is not locked
         if os.path.exists(excel_path):
             try:
                 with open(excel_path, 'a'):
                     pass
             except IOError:
-                QMessageBox.critical(
-                    self,
-                    "File In Use",
-                    f"The Excel file '{excel_name}' is currently open or locked by another program (like Microsoft Excel).\n\nPlease close it and try again."
-                )
+                self.log(f"The Excel file '{excel_name}' is currently open or locked by another program. Please close it and try again.", "ERROR")
                 self.progressBar.setValue(0)
                 return
 
-            reply = QMessageBox.question(
-                self,
-                "Overwrite File?",
-                f"The province Excel file '{excel_name}' already exists in:\n{excel_dir}\n\nDo you want to overwrite it?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if reply == QMessageBox.No:
-                self.progressBar.setValue(0)
-                return
-
+            self.log(f"Target Excel file '{excel_name}' already exists. Overwriting...", "INFO")
             try:
                 os.remove(excel_path)
             except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to delete existing file before overwriting:\n{excel_path}\nError: {e}"
-                )
+                self.log(f"Failed to delete existing file before overwriting: {excel_path} (Error: {e})", "ERROR")
                 self.progressBar.setValue(0)
                 return
 
@@ -426,19 +449,26 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
             QCoreApplication.processEvents()
 
             mun_info = f" across {len(processed_muns)} municipality(ies)" if processed_muns else ""
-            QMessageBox.information(
-                self,
-                "Success",
-                f"Successfully exported {total_records} records from {total_files} merged file(s){mun_info} to province Excel file:\n{excel_path}"
+            self.log("STATUS: COMPLETED ✓", "SUCCESS")
+            self.log(
+                f"Successfully exported {total_records} records from {total_files} merged file(s){mun_info} to province Excel file:\n  {excel_path} ✓",
+                "SUCCESS"
             )
             self.progressBar.setValue(0)
 
         except Exception as e:
-            QMessageBox.critical(self, "An Unexpected Error Occurred", f"Error: {e}")
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log(f"An unexpected error occurred during export: {e}", "ERROR")
             self.progressBar.setValue(0)
         finally:
-            self.mergeBtn.setEnabled(True)
-            self.exportBtn.setEnabled(True)
+            self.check_buttons_state()
+            self.progressBar.setValue(0)
+
+    def clear_logs(self):
+        """Clears the execution logs and resets progress bar."""
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.clear()
+        if hasattr(self, 'progressBar') and self.progressBar:
             self.progressBar.setValue(0)
 
     def reset_fields(self):
@@ -455,9 +485,8 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
         self.comboxMun.setCurrentIndex(-1)
         self.comboxNOS.blockSignals(False)
         self.comboxMun.blockSignals(False)
-        self.progressBar.setValue(0)
-        self.mergeBtn.setEnabled(True)
-        self.exportBtn.setEnabled(True)
+        self.clear_logs()
+        self.check_buttons_state()
 
     def closeEvent(self, event):
         """Clean close event, resets fields to default."""

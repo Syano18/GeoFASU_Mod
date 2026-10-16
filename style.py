@@ -306,6 +306,16 @@ QTextEdit, QPlainTextEdit {
     font-size: 12px;
     color: #0F172A;
 }
+
+QPlainTextEdit#logsTextEdit {
+    background-color: #0F172A;
+    color: #E2E8F0;
+    font-family: 'Consolas', 'Segoe UI Mono', 'Courier New', monospace;
+    font-size: 11px;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 10px;
+}
 """
 
 def apply_modern_style(widget):

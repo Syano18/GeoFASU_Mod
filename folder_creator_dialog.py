@@ -40,6 +40,9 @@ class FolderCreatorDialog(QDialog, FORM_CLASS):
         setup_dialog_logo(self)
         
         self.openBtn.setProperty("secondary", True)
+        if hasattr(self, 'closeBtn'):
+            self.closeBtn.setProperty("secondary", True)
+            self.closeBtn.clicked.connect(self.close)
         self.openBtn.setEnabled(False)
         self.progressBar.setValue(0)
         
@@ -148,13 +151,13 @@ class FolderCreatorDialog(QDialog, FORM_CLASS):
 
     def open_in_explorer(self):
         target_dir = self.get_target_path()
-        if os.path.isdir(target_dir):
-            if hasattr(os, 'startfile'):
-                os.startfile(target_dir)
-            else:
-                QDesktopServices.openUrl(QUrl.fromLocalFile(target_dir))
+        if not target_dir or not os.path.isdir(target_dir):
+            target_dir = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+            os.makedirs(target_dir, exist_ok=True)
+        if hasattr(os, 'startfile'):
+            os.startfile(target_dir)
         else:
-            QMessageBox.warning(self, "Not Found", f"Directory does not exist yet:\n{target_dir}")
+            QDesktopServices.openUrl(QUrl.fromLocalFile(target_dir))
 
     def reset_fields(self):
         """Resets all fields to their default state."""

@@ -152,7 +152,15 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
         self.progressBar.setValue(0)
         self.updateButton.setEnabled(False)
-        self.set_status("READY")
+        self.current_status = "READY"
+        self.statusLabel = None
+        self.set_status("READY", log_message=False)
+
+        # Gatekeeping: Run Checker is only enabled once Quality Checker passes
+        self.quality_check_passed = False
+        self.passed_layer_id = None
+        self.runButton.setEnabled(False)
+        self.runButton.setToolTip("Please run Quality Checker first. Completeness Check is enabled once Quality Checker passes.")
 
         # Default Output Directory
         default_dir = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
@@ -173,34 +181,64 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
         self.comboxSample.currentIndexChanged.connect(self.on_layer_selection_changed)
         self.comboxRef.currentIndexChanged.connect(self.on_layer_selection_changed)
 
+    def set_quality_check_state(self, passed: bool, layer_id: str = None):
+        """Updates the gatekeeper state linked to Quality Checker."""
+        self.quality_check_passed = passed
+        self.passed_layer_id = layer_id if passed else None
+
+        if passed:
+            if layer_id:
+                # If layer exists in Sample dropdown, select it
+                idx = self.comboxSample.findData(layer_id)
+                if idx != -1 and self.comboxSample.currentIndex() != idx:
+                    self.comboxSample.setCurrentIndex(idx)
+            is_match = (
+                self.passed_layer_id is None
+                or self.comboxSample.currentData() == self.passed_layer_id
+            )
+            self.runButton.setEnabled(is_match)
+            if is_match:
+                self.runButton.setToolTip("Quality Check PASSED. Click to run Completeness Check.")
+                lyr = QgsProject.instance().mapLayer(layer_id) if layer_id else None
+                lyr_name = lyr.name() if lyr else "Selected Layer"
+                self.log(
+                    f"Quality Checker PASSED for '{lyr_name}'. Completeness Check is now unlocked. ✓",
+                    "SUCCESS",
+                )
+            else:
+                self.runButton.setToolTip("Selected Sample Layer has not passed Quality Checker yet.")
+        else:
+            self.runButton.setEnabled(False)
+            self.runButton.setToolTip(
+                "Please run Quality Checker first. Completeness Check is enabled once Quality Checker passes."
+            )
+
     def showEvent(self, event):
         self.populate_layers()
         super().showEvent(event)
 
-    def set_status(self, status: str):
-        """Styles the status indicator label."""
-        if status == "PASSED":
-            self.statusLabel.setText("STATUS: PASSED")
-            self.statusLabel.setStyleSheet(
-                "background-color: #DCFCE7; color: #15803D; font-weight: 700; "
-                "font-size: 13px; border: 1.5px solid #22C55E; border-radius: 6px; padding: 4px;"
-            )
-        elif status == "FAILED":
-            self.statusLabel.setText("STATUS: FAILED")
-            self.statusLabel.setStyleSheet(
-                "background-color: #FEE2E2; color: #B91C1C; font-weight: 700; "
-                "font-size: 13px; border: 1.5px solid #EF4444; border-radius: 6px; padding: 4px;"
-            )
-        else:
-            self.statusLabel.setText("STATUS: READY")
-            self.statusLabel.setStyleSheet(
-                "background-color: #F1F5F9; color: #475569; font-weight: 600; "
-                "font-size: 12px; border: 1px solid #CBD5E1; border-radius: 6px; padding: 4px;"
-            )
+    def set_status(self, status: str, log_message: bool = True):
+        """Updates internal status and logs it into the execution logs console."""
+        self.current_status = status
+        if log_message:
+            if status == "PASSED":
+                self.log("STATUS: PASSED ✓", "SUCCESS")
+            elif status == "FAILED":
+                self.log("STATUS: FAILED ✗", "ERROR")
+            elif status == "RUNNING":
+                self.log("STATUS: RUNNING...", "INFO")
+            elif status == "READY":
+                self.log("STATUS: READY", "INFO")
 
-    def log(self, message: str):
-        """Appends a line of text to the logs widget."""
-        self.logsTextEdit.appendPlainText(message)
+    def log(self, message: str, level: str = "INFO"):
+        """Appends a line of text to the logs widget with level indicator."""
+        prefix = {
+            "INFO": "",
+            "SUCCESS": "✓ ",
+            "WARNING": "⚠ ",
+            "ERROR": "✗ ",
+        }.get(level.upper(), "")
+        self.logsTextEdit.appendPlainText(f"{prefix}{message}")
         self.logsTextEdit.verticalScrollBar().setValue(
             self.logsTextEdit.verticalScrollBar().maximum()
         )
@@ -283,6 +321,22 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
     def on_layer_selection_changed(self):
         """Automatically filters Reference Layer when dropdown selections change."""
+        self.set_status("READY")
+        is_passed = self.quality_check_passed and (
+            self.passed_layer_id is None
+            or self.comboxSample.currentData() == self.passed_layer_id
+        )
+        self.runButton.setEnabled(is_passed)
+        if not self.quality_check_passed:
+            self.runButton.setToolTip(
+                "Please run Quality Checker first. Completeness Check is enabled once Quality Checker passes."
+            )
+        elif not is_passed:
+            self.runButton.setToolTip("Selected Sample Layer has not passed Quality Checker yet.")
+        else:
+            self.runButton.setToolTip("Quality Check PASSED. Click to run Completeness Check.")
+
+        self.updateButton.setEnabled(False)
         sample_id = self.comboxSample.currentData()
         ref_id = self.comboxRef.currentData()
         if sample_id and ref_id:
@@ -391,10 +445,18 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
     def run_checker(self):
         """Executes completeness validation between Sample SSU and Reference SSU."""
+        if not self.quality_check_passed:
+            self.log("Quality Checker must PASS before Completeness Check can be run.", "WARNING")
+            self.runButton.setEnabled(False)
+            self.runButton.setToolTip(
+                "Please run Quality Checker first. Completeness Check is enabled once Quality Checker passes."
+            )
+            return
+
         self.logsTextEdit.clear()
         self.progressBar.setValue(0)
         self.updateButton.setEnabled(False)
-        self.set_status("READY")
+        self.set_status("RUNNING")
 
         sample_id = self.comboxSample.currentData()
         ref_id = self.comboxRef.currentData()
@@ -403,29 +465,17 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
         ref_layer = QgsProject.instance().mapLayer(ref_id) if ref_id else None
 
         if not sample_layer or not sample_layer.isValid():
-            QMessageBox.warning(
-                self,
-                "Missing Layer",
-                "Please select a valid Sample SSU layer.",
-            )
+            self.log("Please select a valid Sample SSU layer.", "WARNING")
             self.progressBar.setValue(0)
             return
 
         if not ref_layer or not ref_layer.isValid():
-            QMessageBox.warning(
-                self,
-                "Missing Layer",
-                "Please select a valid Reference SSU layer.",
-            )
+            self.log("Please select a valid Reference SSU layer.", "WARNING")
             self.progressBar.setValue(0)
             return
 
         if sample_layer.id() == ref_layer.id():
-            QMessageBox.warning(
-                self,
-                "Duplicate Layers Selected",
-                "Sample SSU and Reference SSU must be different layers.",
-            )
+            self.log("Sample SSU and Reference SSU must be different layers.", "WARNING")
             self.progressBar.setValue(0)
             return
 
@@ -464,16 +514,13 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             )
 
             if not f_uc:
-                self.log("ERROR: 'Update Codes' column not found in Sample SSU layer.")
+                self.log("ERROR: 'Update Codes' column not found in Sample SSU layer.", "ERROR")
                 self.set_status("FAILED")
-                QMessageBox.critical(
-                    self, "Missing Column", "Could not find 'Update Codes' column in Sample SSU."
-                )
                 self.progressBar.setValue(0)
                 return
 
             if not f_uc6:
-                self.log("WARNING: 'uc_6_ind' column not found in Sample SSU layer.")
+                self.log("WARNING: 'uc_6_ind' column not found in Sample SSU layer.", "WARNING")
 
             # 2. Resolve Reference SSU fields
             f_sel = find_field_name(
@@ -483,11 +530,8 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             )
 
             if not f_sel:
-                self.log("ERROR: 'Selected_SSU' column not found in Reference SSU layer.")
+                self.log("ERROR: 'Selected_SSU' column not found in Reference SSU layer.", "ERROR")
                 self.set_status("FAILED")
-                QMessageBox.critical(
-                    self, "Missing Column", "Could not find 'Selected_SSU' column in Reference SSU."
-                )
                 self.progressBar.setValue(0)
                 return
 
@@ -549,43 +593,48 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
             if sample_valid_count == ref_selected_count:
                 self.set_status("PASSED")
+                self.runButton.setEnabled(False)
                 self.updateButton.setEnabled(True)
-                self.log("RESULT: PASSED ✓")
-                self.log("Sample SSU count matches Reference SSU count perfectly.")
-                self.log("You can now click 'Update SSU List' to merge missing reference records if needed.")
-                QMessageBox.information(
-                    self,
-                    "Completeness Check Passed",
-                    f"Check PASSED!\n\nSample SSU Count: {sample_valid_count}\n"
-                    f"Reference SSU Count: {ref_selected_count}\n\n"
-                    "The 'Update SSU List' button is now enabled.",
-                )
+                self.log(f"Check PASSED! Sample SSU Count: {sample_valid_count} | Reference SSU Count: {ref_selected_count}", "SUCCESS")
+                self.log("Sample SSU count matches Reference SSU count perfectly.", "INFO")
+                self.log("The 'Update SSU List' button is now enabled. You can now click 'Update SSU List' to merge missing reference records if needed.", "INFO")
                 self.progressBar.setValue(0)
             else:
                 self.set_status("FAILED")
+                self.runButton.setEnabled(True)
                 self.updateButton.setEnabled(False)
                 diff = sample_valid_count - ref_selected_count
                 diff_desc = f"{abs(diff)} more in Sample" if diff > 0 else f"{abs(diff)} more in Reference"
-                self.log("RESULT: FAILED ✗")
-                self.log(f"Counts do not match! Difference: {abs(diff)} ({diff_desc}).")
-                self.log("Please review your surveyed records and reference layer before proceeding.")
-                QMessageBox.warning(
-                    self,
-                    "Completeness Check Failed",
-                    f"Check FAILED!\n\nSample SSU Count: {sample_valid_count}\n"
-                    f"Reference SSU Count: {ref_selected_count}\n"
-                    f"Difference: {abs(diff)} ({diff_desc})\n\n"
-                    "Counts must be equal to enable updating the SSU list.",
-                )
+                self.log(f"Check FAILED! Sample SSU Count: {sample_valid_count} | Reference SSU Count: {ref_selected_count} | Difference: {abs(diff)} ({diff_desc}).", "ERROR")
+                self.log("Counts must be equal to enable updating the SSU list. Please review your surveyed records and reference layer.", "WARNING")
                 self.progressBar.setValue(0)
 
         except Exception as e:
-            self.log(f"EXCEPTION: {e}")
+            self.log(f"An unexpected error occurred during check: {e}", "ERROR")
             self.set_status("FAILED")
-            QMessageBox.critical(self, "Error", f"An unexpected error occurred during check:\n{e}")
+            self.runButton.setEnabled(True)
             self.progressBar.setValue(0)
         finally:
-            self.runButton.setEnabled(True)
+            if self.current_status != "PASSED":
+                is_passed = self.quality_check_passed and (
+                    self.passed_layer_id is None
+                    or self.comboxSample.currentData() == self.passed_layer_id
+                )
+                self.runButton.setEnabled(is_passed)
+                if not self.quality_check_passed:
+                    self.runButton.setToolTip(
+                        "Please run Quality Checker first. Completeness Check is enabled once Quality Checker passes."
+                    )
+                elif not is_passed:
+                    self.runButton.setToolTip(
+                        "Selected Sample Layer has not passed Quality Checker yet."
+                    )
+                else:
+                    self.runButton.setToolTip(
+                        "Quality Check PASSED. Click to run Completeness Check."
+                    )
+            else:
+                self.runButton.setEnabled(False)
             self.progressBar.setValue(0)
 
     def resolve_survey_and_mun(self, sample_layer, ref_layer=None, base_out_dir=None):
@@ -762,7 +811,7 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
         ref_layer = QgsProject.instance().mapLayer(ref_id) if ref_id else None
 
         if not sample_layer or not sample_layer.isValid() or not ref_layer or not ref_layer.isValid():
-            QMessageBox.warning(self, "Invalid Layers", "Please ensure both layers are valid.")
+            self.log("Please ensure both Sample SSU and Reference SSU layers are valid.", "WARNING")
             self.progressBar.setValue(0)
             return
 
@@ -777,31 +826,17 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
         if not all([s_bsn, s_husn, s_hsn]):
             missing = [c for c, f in [("BSN", s_bsn), ("HUSN", s_husn), ("HSN", s_hsn)] if not f]
-            QMessageBox.critical(
-                self, "Missing Key Column", f"Sample SSU layer is missing: {', '.join(missing)}"
-            )
+            self.log(f"Sample SSU layer is missing key column(s): {', '.join(missing)}", "ERROR")
             self.progressBar.setValue(0)
             return
 
         if not all([r_bsn, r_husn, r_hsn]):
             missing = [c for c, f in [("BSN", r_bsn), ("HUSN", r_husn), ("HSN", r_hsn)] if not f]
-            QMessageBox.critical(
-                self, "Missing Key Column", f"Reference SSU layer is missing: {', '.join(missing)}"
-            )
+            self.log(f"Reference SSU layer is missing key column(s): {', '.join(missing)}", "ERROR")
             self.progressBar.setValue(0)
             return
 
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Update SSU List",
-            f"Are you sure you want to merge missing records from '{ref_layer.name()}' "
-            f"into '{sample_layer.name()}' and validate before saving?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        if confirm != QMessageBox.Yes:
-            self.progressBar.setValue(0)
-            return
+        self.log(f"Starting Update SSU List: merging missing records from '{ref_layer.name()}' into '{sample_layer.name()}'...", "INFO")
 
         self.updateButton.setEnabled(False)
         self.progressBar.setValue(10)
@@ -861,10 +896,7 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             if features_to_add:
                 success = sample_layer.dataProvider().addFeatures(features_to_add)
                 if not success:
-                    self.log("ERROR: dataProvider().addFeatures() returned False.")
-                    QMessageBox.critical(
-                        self, "Update Failed", "Failed to insert features into Sample SSU layer."
-                    )
+                    self.log("ERROR: Failed to insert features into Sample SSU layer (dataProvider returned False).", "ERROR")
                     self.progressBar.setValue(0)
                     return
 
@@ -874,7 +906,8 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                     self.iface.mapCanvas().refresh()
 
                 self.log(
-                    f"Successfully copied {len(features_to_add)} missing record(s) into '{sample_layer.name()}':"
+                    f"Successfully copied {len(features_to_add)} missing record(s) into '{sample_layer.name()}':",
+                    "INFO"
                 )
                 for item in missing_records_log[:10]:
                     self.log(f"  + Added: {item}")
@@ -882,7 +915,8 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                     self.log(f"  + ... and {len(missing_records_log) - 10} more records.")
             else:
                 self.log(
-                    "Update SSU List: All records from Reference SSU are already present in Sample SSU (0 new records to add)."
+                    "Update SSU List: All records from Reference SSU are already present in Sample SSU (0 new records to add).",
+                    "INFO"
                 )
 
             # 4. PRE-SAVE VALIDATION on merged layer
@@ -890,7 +924,7 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             QCoreApplication.processEvents()
 
             self.log("-" * 55)
-            self.log("Running Pre-Save Validation on merged layer...")
+            self.log("Running Pre-Save Validation on merged layer...", "INFO")
 
             f_sel = find_field_name(
                 sample_layer,
@@ -913,22 +947,12 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             )
 
             if not f_sel:
-                self.log("ERROR: 'Selected_SSU' column not found in merged Sample SSU layer.")
-                QMessageBox.critical(
-                    self,
-                    "Missing Column",
-                    "Could not find 'Selected_SSU' column in Sample SSU layer.",
-                )
+                self.log("ERROR: 'Selected_SSU' column not found in merged Sample SSU layer.", "ERROR")
                 self.progressBar.setValue(0)
                 return
 
             if not f_uc:
-                self.log("ERROR: 'Update Codes' column not found in merged Sample SSU layer.")
-                QMessageBox.critical(
-                    self,
-                    "Missing Column",
-                    "Could not find 'Update Codes' column in Sample SSU layer.",
-                )
+                self.log("ERROR: 'Update Codes' column not found in merged Sample SSU layer.", "ERROR")
                 self.progressBar.setValue(0)
                 return
 
@@ -1012,17 +1036,10 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                     h = str(e_feat[s_hsn]).strip() if s_hsn and not is_null_or_empty(e_feat[s_hsn]) else "-"
                     self.log(f"  [{idx}] BSN={b}, HUSN={hu}, HSN={h} (FID={e_feat.id()}) → {e_reason}")
                 self.log("-" * 55)
-                self.log("Saving aborted. Please resolve the missing Update Codes in the error layer.")
-
-                QMessageBox.warning(
-                    self,
-                    "Validation Errors Found",
-                    f"Pre-save Validation FAILED!\n\n"
-                    f"Found {len(layer_errors)} record(s) where Selected_SSU = 1 but Update Codes is missing.\n\n"
-                    f"A temporary layer '{temp_name}' has been created in QGIS with the error records, "
-                    f"and the error details are listed in the Logs.\n\n"
-                    f"The .gpkg file was NOT saved.",
-                )
+                self.log("Pre-save Validation FAILED! The .gpkg file was NOT saved.", "ERROR")
+                self.log(f"Found {len(layer_errors)} record(s) where Selected_SSU = 1 but Update Codes is missing.", "ERROR")
+                self.log(f"A temporary layer '{temp_name}' has been created in QGIS with the error records.", "WARNING")
+                self.log("Please resolve the missing Update Codes in the error layer before saving.", "WARNING")
                 self.progressBar.setValue(0)
                 return
 
@@ -1088,48 +1105,60 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                     )
                 )
                 if res == QgsVectorFileWriter.NoError or res == 0:
-                    self.log(f"Exported merged GeoPackage to Validation Output:\n  {out_gpkg_path}")
+                    self.log(f"Exported merged GeoPackage to Validation Output:\n  {out_gpkg_path}", "SUCCESS")
                 else:
-                    self.log(f"ERROR: Failed to export GeoPackage: {err_str}")
-                    QMessageBox.critical(
-                        self,
-                        "Export Error",
-                        f"Failed to write GeoPackage file to:\n{out_gpkg_path}\n\nError: {err_str}",
-                    )
+                    self.log(f"ERROR: Failed to write GeoPackage file to {out_gpkg_path}: {err_str}", "ERROR")
                     self.progressBar.setValue(0)
                     return
 
             self.progressBar.setValue(100)
-            msg = (
-                f"Update SSU List completed successfully!\n\n"
-                f"• Pre-save Validation: PASSED ({selected_1_count} records validated)\n"
-            )
+            self.log("Update SSU List completed successfully! ✓", "SUCCESS")
+            self.log(f"• Pre-save Validation: PASSED ({selected_1_count} records validated)", "INFO")
             if len(features_to_add) > 0:
-                msg += f"• Missing Records Copied: {len(features_to_add)}\n\n"
+                self.log(f"• Missing Records Copied: {len(features_to_add)}", "INFO")
             else:
-                msg += "• Missing Records Copied: 0 (All reference records were already present)\n\n"
-            msg += f"Saved to:\n{out_gpkg_path}"
-
-            QMessageBox.information(self, "Update SSU List Complete", msg)
+                self.log("• Missing Records Copied: 0 (All reference records were already present)", "INFO")
+            self.log(f"• Saved to: {out_gpkg_path}", "SUCCESS")
             self.progressBar.setValue(0)
 
         except Exception as e:
-            self.log(f"EXCEPTION during update: {e}")
-            QMessageBox.critical(self, "Error", f"Error updating SSU list:\n{e}")
+            self.log(f"EXCEPTION during update: {e}", "ERROR")
             self.progressBar.setValue(0)
         finally:
             self.updateButton.setEnabled(False)
             self.progressBar.setValue(0)
 
-    def reset_fields(self):
+    def clear_logs(self):
+        """Clears the execution logs and resets progress bar."""
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.clear()
+        if hasattr(self, 'progressBar') and self.progressBar:
+            self.progressBar.setValue(0)
+
+    def reset_fields(self, preserve_quality_state=False):
         """Resets all input fields, logs, status, and progress bar to default values."""
         default_dir = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
         if hasattr(self, "outputDirWidget"):
             self.outputDirWidget.setFilePath(default_dir)
-        self.populate_layers(reset_selection=True)
-        self.logsTextEdit.clear()
+        if not preserve_quality_state:
+            self.quality_check_passed = False
+            self.passed_layer_id = None
+        self.populate_layers(reset_selection=not preserve_quality_state)
+        self.clear_logs()
         self.set_status("READY")
-        self.runButton.setEnabled(True)
+        is_passed = self.quality_check_passed and (
+            self.passed_layer_id is None
+            or self.comboxSample.currentData() == self.passed_layer_id
+        )
+        self.runButton.setEnabled(is_passed)
+        if not self.quality_check_passed:
+            self.runButton.setToolTip(
+                "Please run Quality Checker first. Completeness Check is enabled once Quality Checker passes."
+            )
+        elif not is_passed:
+            self.runButton.setToolTip("Selected Sample Layer has not passed Quality Checker yet.")
+        else:
+            self.runButton.setToolTip("Quality Check PASSED. Click to run Completeness Check.")
         self.updateButton.setEnabled(False)
         self.progressBar.setValue(0)
 

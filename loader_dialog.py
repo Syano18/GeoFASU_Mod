@@ -105,6 +105,20 @@ class LoaderDialog(QDialog, FORM_CLASS):
         s = re.sub(r'[<>:"/\\|?*]+', "_", s)
         return s.rstrip(" .")
 
+    def log(self, message: str, level: str = "INFO"):
+        """Appends a line of text to the logs widget with level indicator."""
+        prefix = {
+            "INFO": "",
+            "SUCCESS": "✓ ",
+            "WARNING": "⚠ ",
+            "ERROR": "✗ ",
+        }.get(level.upper(), "")
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.appendPlainText(f"{prefix}{message}")
+            self.logsTextEdit.verticalScrollBar().setValue(
+                self.logsTextEdit.verticalScrollBar().maximum()
+            )
+
     def show_error(self, message: str):
         self.load_successful = False
         self.progbar.setValue(0)
@@ -112,8 +126,9 @@ class LoaderDialog(QDialog, FORM_CLASS):
         self.loadbtn.setEnabled(True)
         self.aplqml.setEnabled(False)
         self.genrate.setEnabled(False)
+        self.log("STATUS: FAILED ✗", "ERROR")
+        self.log(f"{message}", "ERROR")
         QCoreApplication.processEvents()
-        QMessageBox.critical(self, "Error", message)
 
     def remove_all_layers(self):
         project = QgsProject.instance()
@@ -136,29 +151,48 @@ class LoaderDialog(QDialog, FORM_CLASS):
         if hasattr(self, 'iface') and self.iface and self.iface.mapCanvas():
             self.iface.mapCanvas().refresh()
 
-    def reset_all(self):
-        """Reset UI and, if load failed, remove added groups."""
-        if not self.load_successful:
-            self.remove_all_layers()
-
+    def reset_fields(self):
+        """Resets all input fields and progress bar to their default state."""
         for w in (self.fileWidget, self.comboxNOS, self.comboxMun, self.comboxRep, self.loadbtn):
             w.setEnabled(True)
 
         default_ref = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
         self.fileWidget.setFilePath(default_ref)
+        self.comboxNOS.blockSignals(True)
+        self.comboxMun.blockSignals(True)
+        self.comboxRep.blockSignals(True)
         self.comboxNOS.clear()
         self.comboxMun.clear()
         self.comboxRep.clear()
+        self.comboxNOS.setPlaceholderText("-- Select Type of Survey --")
+        self.comboxMun.setPlaceholderText("-- Select City/Municipality --")
+        self.comboxRep.setPlaceholderText("-- Select Replicate Number --")
+        self.comboxNOS.blockSignals(False)
+        self.comboxMun.blockSignals(False)
+        self.comboxRep.blockSignals(False)
         if os.path.isdir(default_ref):
             self.populate_nos_list()
+        self.comboxNOS.setCurrentIndex(-1)
+        self.comboxMun.setCurrentIndex(-1)
+        self.comboxRep.setCurrentIndex(-1)
         self.progbar.setValue(0)
         self.aplqml.setEnabled(False)
         self.genrate.setEnabled(False)
         self.load_successful = False
+        self.clear_logs()
 
-    def reset_fields(self):
-        """Standard alias for reset_all."""
-        self.reset_all()
+    def clear_logs(self):
+        """Clears the execution logs and resets progress bar."""
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.clear()
+        if hasattr(self, 'progbar') and self.progbar:
+            self.progbar.setValue(0)
+
+    def reset_all(self):
+        """Reset UI and, if load failed, remove added groups."""
+        if not self.load_successful:
+            self.remove_all_layers()
+        self.reset_fields()
 
     def closeEvent(self, event):
         self.reset_all()
@@ -264,6 +298,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
     # ---------- Load ----------
     def load_layers(self):
+        self.logsTextEdit.clear()
+        self.log("STATUS: LOADING LAYERS...", "INFO")
         self.loadbtn.setEnabled(False)
         self.progbar.setValue(5)
         QCoreApplication.processEvents()
@@ -498,7 +534,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
                             break
 
             QCoreApplication.processEvents()
-            QMessageBox.information(self, "Success", "Layers successfully loaded.")
+            self.log("STATUS: COMPLETED ✓", "SUCCESS")
+            self.log(f"Layers successfully loaded for {nos} - {mun} (Rep {rep})! ✓", "SUCCESS")
             if self.iface and self.iface.mapCanvas():
                 self.iface.mapCanvas().refresh()
 
@@ -571,7 +608,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
             self.aplqml.setEnabled(False)
             self.genrate.setEnabled(True)
             QCoreApplication.processEvents()
-            QMessageBox.information(self, "Style Applied", "QML styles successfully applied.")
+            self.log("STATUS: COMPLETED ✓", "SUCCESS")
+            self.log("QML styles successfully applied to all layers! ✓", "SUCCESS")
 
         except Exception as e:
             self.show_error(f"Failed to apply styles: {str(e)}")
@@ -579,17 +617,16 @@ class LoaderDialog(QDialog, FORM_CLASS):
     # ---------- Export ----------
     def export_qfield_project(self):
         if not HAS_QFIELDSYNC:
-            QMessageBox.critical(
-                self, "Error",
-                "QFieldSync plugin is not installed or enabled. Please install QFieldSync to use this export feature."
-            )
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log("QFieldSync plugin is not installed or enabled. Please install QFieldSync to use this export feature.", "ERROR")
             return
 
+        self.log("STATUS: GENERATING QFIELD PROJECT...", "INFO")
         project = QgsProject.instance()
 
         base_dir = self.fileWidget.filePath()
         if not base_dir:
-            QMessageBox.critical(self, "Error", "Please select a Reference Directory.")
+            self.log("Please select a Reference Directory.", "WARNING")
             return
         base_path = Path(base_dir)
 
@@ -597,12 +634,13 @@ class LoaderDialog(QDialog, FORM_CLASS):
         mun = self._clean(self.comboxMun.currentText())
         rep = self._clean(self.comboxRep.currentText())
         if not all([nos, mun, rep]):
-            QMessageBox.critical(self, "Error", "Please ensure Type of Survey, Municipality, and Replicate are selected.")
+            self.log("Please ensure Type of Survey, Municipality, and Replicate Number are selected.", "WARNING")
             return
 
         layer = self.get_reference_layer("Selected SSU_Ref")
         single_psu_only = False
         single_psu_name = None
+        selected_psus_override = None
         if layer:
             idx = layer.fields().lookupField("PSU_Name")
             if idx != -1:
@@ -610,20 +648,24 @@ class LoaderDialog(QDialog, FORM_CLASS):
                 if len(psu_names) == 1:
                     single_psu_only = True
                     single_psu_name = psu_names[0]
+                elif len(psu_names) > 1:
+                    chosen = self.choose_psus(psu_names)
+                    if chosen:
+                        selected_psus_override = chosen
 
-        if single_psu_only:
-            reply = QMessageBox.Yes
-        else:
-            reply = QMessageBox.question(
-                self, "Export by PSU?",
-                "Do you want to export separately by PSU name?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-            )
+        reply = (single_psu_only or bool(selected_psus_override))
 
         try:
             Preferences().set_value("exportDirectory", str(base_path))
         except Exception:
             pass
+
+        try:
+            from qfieldsync.core.cloud_converter import CloudConverter
+        except Exception:
+            CloudConverter = None
+
+        mbtiles_cache = {}
 
         def run_convert(inner_folder_name, psu_filter=None, progress_callback=None):
             def set_prog(val, text=""):
@@ -642,11 +684,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
             target_dir = target_root / inner_folder_name
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            val_root = base_path / "Validation Output" / nos / mun
-            val_root.mkdir(parents=True, exist_ok=True)
-
+            import tempfile
+            import uuid
             orig_proj_filename = project.fileName()
-            temp_proj_path = str(base_path / "geofasu_temp_export.qgz")
+            temp_proj_path = os.path.join(tempfile.gettempdir(), f"geofasu_temp_{uuid.uuid4().hex[:6]}.qgs")
             project.write(temp_proj_path)
             project.setFileName(orig_proj_filename)
 
@@ -839,6 +880,23 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                 mask_memory_layer, temp_mask_path, "UTF-8", raster_crs, "GPKG"
                             )
 
+                            mask_key = None
+                            if mask_features:
+                                mask_key = "_".join(sorted(str(f["name"] if "name" in [fld.name() for fld in base_layer_for_mask.fields()] else f.id()) for f in mask_features))
+
+                            dest_mbtiles_path = str(target_dir / f"{raster_layer.name()}.mbtiles")
+
+                            # Fast path: Reuse already-clipped MBTiles if identical mask features were processed in this batch
+                            if mask_key and mask_key in mbtiles_cache and os.path.exists(mbtiles_cache[mask_key]):
+                                set_prog(35, "Reusing cached basemap...")
+                                shutil.copyfile(mbtiles_cache[mask_key], dest_mbtiles_path)
+                                new_raster = QgsRasterLayer(dest_mbtiles_path, raster_layer.name(), "gdal")
+                                if new_raster.isValid():
+                                    temp_project.addMapLayer(new_raster, False)
+                                    basemap_group.insertLayer(0, new_raster)
+                                    temp_project.removeMapLayer(raster_layer.id())
+                                break
+
                             extent = mask_memory_layer.extent()
                             bounds = [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
 
@@ -846,10 +904,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                 tempfile.gettempdir(),
                                 f"{raster_layer.name()}_{inner_folder_name}_{uuid.uuid4().hex[:6]}.tif"
                             )
-                            dest_mbtiles_path = str(target_dir / f"{raster_layer.name()}.mbtiles")
 
                             try:
-                                gdal.SetCacheMax(512 * 1024 * 1024)
+                                gdal.SetCacheMax(1024 * 1024 * 1024)
+                                gdal.SetConfigOption('GDAL_NUM_THREADS', 'ALL_CPUS')
 
                                 def warp_cb(complete, message, unknown):
                                     p = int(20 + complete * 20)
@@ -879,7 +937,7 @@ class LoaderDialog(QDialog, FORM_CLASS):
                                         dest_mbtiles_path,
                                         temp_tif_path,
                                         format='MBTILES',
-                                        creationOptions=['TILE_FORMAT=JPEG', 'QUALITY=80', 'ZOOM_LEVEL_STRATEGY=AUTO'],
+                                        creationOptions=['TILE_FORMAT=JPEG', 'QUALITY=80', 'ZOOM_LEVEL_STRATEGY=AUTO', 'NUM_THREADS=ALL_CPUS'],
                                         callback=trans_cb
                                     )
 
@@ -891,8 +949,11 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
                                         ds = gdal.Open(dest_mbtiles_path, gdal.GA_Update)
                                         if ds:
-                                            ds.BuildOverviews("NEAREST", [2, 4, 8, 16], callback=ov_cb)
+                                            ds.BuildOverviews("NEAREST", [2, 4, 8], callback=ov_cb)
                                             ds = None
+
+                                        if mask_key and os.path.exists(dest_mbtiles_path):
+                                            mbtiles_cache[mask_key] = dest_mbtiles_path
 
                                         new_raster = QgsRasterLayer(dest_mbtiles_path, raster_layer.name(), "gdal")
                                         if new_raster.isValid():
@@ -917,22 +978,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
             set_prog(65, "Packaging QField project...")
             try:
-                import importlib
-                for mod_n in ["libqfieldsync.layer", "libqfieldsync.utils.qgis", "qfieldsync.core.cloud_converter"]:
-                    if mod_n in sys.modules:
-                        try:
-                            importlib.reload(sys.modules[mod_n])
-                        except Exception:
-                            pass
-                from qfieldsync.core.cloud_converter import CloudConverter
-            except Exception:
-                pass
-
-            try:
                 cc = CloudConverter(temp_project, str(target_dir))
                 setattr(cc, "open_project_after_convert", False)
                 cc.total_progress_updated.connect(
-                    lambda cur, tot, msg: set_prog(int(65 + (cur / max(tot, 1)) * 25), "Writing QField project...")
+                    lambda cur, tot, msg: set_prog(int(65 + (cur / max(tot, 1)) * 30), "Writing QField project...")
                 )
                 cc.convert()
             finally:
@@ -942,16 +991,10 @@ class LoaderDialog(QDialog, FORM_CLASS):
                 except Exception:
                     pass
 
-            set_prog(92, "Copying validation layers...")
-            # Copy validation outputs
-            for gpkg_cand in target_dir.glob("*.gpkg"):
-                if not any(k in gpkg_cand.name.lower() for k in ["ref", "tracklog", "bdry"]):
-                    shutil.copy2(gpkg_cand, val_root / gpkg_cand.name)
-
             set_prog(100, "Done")
             return target_dir
 
-        if reply == QMessageBox.No:
+        if not reply:
             self.genrate.setEnabled(False)
             self.loadbtn.setEnabled(False)
             self.progbar.setValue(10)
@@ -963,40 +1006,39 @@ class LoaderDialog(QDialog, FORM_CLASS):
                     self.progbar.setValue(p)
                     QCoreApplication.processEvents()
 
-                run_convert(inner_name, progress_callback=make_single_cb)
+                out_target = run_convert(inner_name, progress_callback=make_single_cb)
                 self.progbar.setValue(100)
                 self.progbar.setFormat("%p%")
                 self.genrate.setEnabled(False)
                 self.loadbtn.setEnabled(True)
-                QMessageBox.information(self, "Export Complete", f"Successfully generated QField project: {inner_name}")
+                self.log(f"Successfully generated QField project: {inner_name}! ✓", "SUCCESS")
+                self.log(f"Export Location: {out_target}", "INFO")
             except Exception as e:
                 self.progbar.setValue(0)
                 self.progbar.setFormat("%p%")
                 self.genrate.setEnabled(True)
                 self.loadbtn.setEnabled(True)
-                QMessageBox.critical(self, "Export Failed", str(e))
+                self.log(f"Export Failed: {str(e)}", "ERROR")
             return
 
         if not layer:
-            QMessageBox.critical(self, "Error", "Reference layer 'Selected SSU_Ref' not found in project.")
+            self.log("Reference layer 'Selected SSU_Ref' not found in project.", "ERROR")
             return
 
         idx = layer.fields().lookupField("PSU_Name")
         if idx == -1:
-            QMessageBox.critical(self, "Error", "Field 'PSU_Name' not found in Selected SSU_Ref.")
+            self.log("Field 'PSU_Name' not found in Selected SSU_Ref.", "ERROR")
             return
 
         psu_names = sorted({self._clean(str(f[idx])) for f in layer.getFeatures() if f[idx] not in (None, "")})
         if not psu_names:
-            QMessageBox.critical(self, "Error", "No PSU_Name values found in Reference layer.")
+            self.log("No PSU_Name values found in Reference layer.", "ERROR")
             return
 
         if single_psu_only:
             selected_psus = [single_psu_name]
         else:
-            selected_psus = self.choose_psus(psu_names)
-            if not selected_psus:
-                return
+            selected_psus = selected_psus_override if selected_psus_override else psu_names
 
         self.genrate.setEnabled(False)
         self.loadbtn.setEnabled(False)
@@ -1031,19 +1073,13 @@ class LoaderDialog(QDialog, FORM_CLASS):
         self.loadbtn.setEnabled(True)
         if fail > 0:
             self.genrate.setEnabled(True)
-            err_msg = "\n\n".join(failed_errors[:4])
-            if len(failed_errors) > 4:
-                err_msg += f"\n\n...and {len(failed_errors) - 4} more."
-            QMessageBox.critical(
-                self, "Export Issues",
-                f"Generated {success} of {total} QField Project(s).\n\nErrors encountered:\n{err_msg}"
-            )
+            self.log("STATUS: FAILED ✗", "ERROR")
+            err_msg = "; ".join(failed_errors[:4])
+            self.log(f"Export Issues: Generated {success} of {total} QField Project(s). Errors: {err_msg}", "ERROR")
         else:
             self.genrate.setEnabled(False)
-            QMessageBox.information(
-                self, "Export Finished",
-                f"Successfully generated {success} QField Project(s)."
-            )
+            self.log("STATUS: COMPLETED ✓", "SUCCESS")
+            self.log(f"Export Finished: Successfully generated all {success} QField Project(s)! ✓", "SUCCESS")
 
     def choose_psus(self, psu_list):
         """Displays selection dialog for PSUs."""

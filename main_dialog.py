@@ -30,6 +30,52 @@ except (ImportError, ValueError):
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'main_dialog.ui'))
 
 
+def apply_responsive_geometry(dialog, preferred_w=920, preferred_h=640, min_w=640, min_h=400):
+    """
+    Dynamically sizes and centers the dialog to fit any display resolution
+    (especially laptops like 1366x768, 1080p with 125%/150% scaling, or compact screens).
+    Also enables window maximize/minimize/restore controls.
+    """
+    dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMinMaxButtonsHint)
+
+    from qgis.PyQt.QtWidgets import QApplication
+    screen = QApplication.primaryScreen()
+    if screen:
+        avail = screen.availableGeometry()
+        avail_w = avail.width()
+        avail_h = avail.height()
+
+        target_w = min(preferred_w, max(min_w, int(avail_w * 0.92)))
+        target_h = min(preferred_h, max(min_h, int(avail_h * 0.88)))
+
+        safe_min_w = min(min_w, int(avail_w * 0.75))
+        safe_min_h = min(min_h, int(avail_h * 0.60))
+        dialog.setMinimumSize(safe_min_w, safe_min_h)
+
+        x = avail.x() + max(0, (avail_w - target_w) // 2)
+        y = avail.y() + max(0, (avail_h - target_h) // 2)
+        dialog.setGeometry(x, y, target_w, target_h)
+
+        logo_h = 45 if avail_h < 760 else 65
+        setup_dialog_logo(dialog, max_width=200, max_height=logo_h)
+    else:
+        dialog.resize(preferred_w, preferred_h)
+        dialog.setMinimumSize(min_w, min_h)
+        setup_dialog_logo(dialog, max_width=220, max_height=65)
+
+
+def open_default_folder_in_explorer():
+    """Opens the default project folder in Windows File Explorer."""
+    default_dir = r"C:\PSA-GIS\GeoFASU\Kalinga\Project files"
+    os.makedirs(default_dir, exist_ok=True)
+    try:
+        os.startfile(default_dir)
+    except Exception:
+        from qgis.PyQt.QtGui import QDesktopServices
+        from qgis.PyQt.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl.fromLocalFile(default_dir))
+
+
 def _make_scroll(widget):
     widget.setWindowFlags(Qt.Widget)
     widget.setMinimumSize(0, 0)
@@ -37,10 +83,16 @@ def _make_scroll(widget):
         widget.iconLabel.hide()
     if hasattr(widget, 'closeButton'):
         widget.closeButton.hide()
+    if hasattr(widget, 'openFolderButton'):
+        widget.openFolderButton.hide()
+    if hasattr(widget, 'mainHorizontalLayout') and widget.mainHorizontalLayout:
+        widget.mainHorizontalLayout.setStretch(0, 1)
+        widget.mainHorizontalLayout.setStretch(1, 1)
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.NoFrame)
-    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
     scroll.setWidget(widget)
     return scroll
 
@@ -50,18 +102,22 @@ class PreprocessingDialog(QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
-        self.resize(560, 680)
-        self.setMinimumSize(520, 640)
         self.setWindowTitle("GeoFASU_Mod - Preprocessing")
         apply_modern_style(self)
-        setup_dialog_logo(self, max_width=220, max_height=80)
+        apply_responsive_geometry(self, preferred_w=920, preferred_h=620, min_w=640, min_h=400)
 
         icons_path = Path(__file__).parent / "icons"
 
         self.btn_update.setProperty("secondary", True)
+        self.btn_open_folder.setProperty("secondary", True)
         self.btn_close.setProperty("secondary", True)
         self.btn_update.clicked.connect(lambda: check_for_updates(self, silent_if_latest=False))
+        self.btn_open_folder.clicked.connect(self.open_default_folder)
         self.btn_close.clicked.connect(self.close)
+
+        folder_icon = icons_path / "folder.png"
+        if folder_icon.exists():
+            self.btn_open_folder.setIcon(QIcon(str(folder_icon)))
 
         # Modules
         self.tab_converter = GeoFASUDialog(parent=self)
@@ -82,8 +138,11 @@ class PreprocessingDialog(QDialog, FORM_CLASS):
         self.tabWidget.currentChanged.connect(self.on_tab_changed)
 
     def on_tab_changed(self, index: int):
-        if index == 1 and hasattr(self, 'tab_loader'):
-            self.tab_loader.populate_nos_list()
+        for widget, _, _ in self.tabs:
+            if hasattr(widget, 'clear_logs'):
+                widget.clear_logs()
+            elif hasattr(widget, 'logsTextEdit') and widget.logsTextEdit:
+                widget.logsTextEdit.clear()
 
     def on_converter_completed(self, survey_name: str = "", out_dir: str = ""):
         if hasattr(self, 'tab_loader'):
@@ -96,22 +155,33 @@ class PreprocessingDialog(QDialog, FORM_CLASS):
                     self.tab_loader.comboxNOS.setCurrentIndex(idx)
                     self.tab_loader.update_mun_list()
 
+    def open_default_folder(self):
+        """Opens the default project folder in Windows File Explorer."""
+        open_default_folder_in_explorer()
+
     def set_active_tab(self, index: int):
         if 0 <= index < self.tabWidget.count():
             self.tabWidget.setCurrentIndex(index)
-            if index == 1 and hasattr(self, 'tab_loader'):
-                self.tab_loader.populate_nos_list()
+            self.on_tab_changed(index)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        from qgis.PyQt.QtWidgets import QApplication
+        screen = QApplication.screenAt(self.pos()) or QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            new_w = min(self.width(), int(avail.width() * 0.95))
+            new_h = min(self.height(), int(avail.height() * 0.90))
+            if new_w != self.width() or new_h != self.height():
+                self.resize(new_w, new_h)
 
     def reset_all_modules(self):
         """Resets all fields in all preprocessing modules to their default values."""
-        if hasattr(self, 'tab_converter') and hasattr(self.tab_converter, 'reset_fields'):
-            self.tab_converter.reset_fields()
-        if hasattr(self, 'tab_loader'):
-            if hasattr(self.tab_loader, 'reset_fields'):
-                self.tab_loader.reset_fields()
-            elif hasattr(self.tab_loader, 'reset_all'):
-                self.tab_loader.reset_all()
-        self.set_active_tab(0)
+        for widget, _, _ in self.tabs:
+            if hasattr(widget, 'reset_fields'):
+                widget.reset_fields()
+        if 0 < self.tabWidget.count():
+            self.tabWidget.setCurrentIndex(0)
 
     def closeEvent(self, event):
         """Resets all fields in all modules when the dialog is closed."""
@@ -130,23 +200,32 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
         super().__init__(parent)
         self.iface = iface
         self.setupUi(self)
-        self.resize(600, 740)
-        self.setMinimumSize(560, 680)
         self.setWindowTitle("GeoFASU_Mod - Postprocessing")
         apply_modern_style(self)
-        setup_dialog_logo(self, max_width=220, max_height=80)
+        apply_responsive_geometry(self, preferred_w=920, preferred_h=640, min_w=640, min_h=420)
 
         icons_path = Path(__file__).parent / "icons"
 
         self.btn_update.setProperty("secondary", True)
+        self.btn_open_folder.setProperty("secondary", True)
         self.btn_close.setProperty("secondary", True)
         self.btn_update.clicked.connect(lambda: check_for_updates(self, silent_if_latest=False))
+        self.btn_open_folder.clicked.connect(self.open_default_folder)
         self.btn_close.clicked.connect(self.close)
+
+        folder_icon = icons_path / "folder.png"
+        if folder_icon.exists():
+            self.btn_open_folder.setIcon(QIcon(str(folder_icon)))
 
         # Modules
         self.tab_checker = CheckerDialog(iface=self.iface, parent=self)
         self.tab_completeness = CompletenessCheckerDialog(iface=self.iface, parent=self)
         self.tab_gpkg_excel = GpkgToExcelDialog(parent=self)
+
+        # Gatekeeping Quality Checker -> Completeness Checker
+        self.last_passed_layer_id = None
+        self.tab_checker.quality_check_passed.connect(self.on_quality_check_passed)
+        self.tab_checker.quality_check_failed.connect(self.on_quality_check_failed)
 
         self.tabs = [
             (self.tab_checker, "Quality Checker", "checker.png"),
@@ -162,29 +241,62 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
 
         self.tabWidget.currentChanged.connect(self.on_tab_changed)
 
-    def on_tab_changed(self, index):
-        if index == 0:
-            self.tab_checker.populate_layers()
-        elif index == 1:
-            self.tab_completeness.populate_layers()
+    def on_quality_check_passed(self, layer_id: str):
+        """Called when Quality Checker passes with 0 errors."""
+        self.last_passed_layer_id = layer_id
+        if hasattr(self, 'tab_completeness'):
+            self.tab_completeness.set_quality_check_state(True, layer_id)
+
+    def on_quality_check_failed(self):
+        """Called when Quality Checker fails, has errors, or layer selection changes."""
+        self.last_passed_layer_id = None
+        if hasattr(self, 'tab_completeness'):
+            self.tab_completeness.set_quality_check_state(False)
+
+    def on_tab_changed(self, index: int):
+        # Reset logs across tabs when tab changes
+        for widget, _, _ in self.tabs:
+            if hasattr(widget, 'clear_logs'):
+                widget.clear_logs()
+            elif hasattr(widget, 'logsTextEdit') and widget.logsTextEdit:
+                widget.logsTextEdit.clear()
+
+        if index == 1 and hasattr(self, 'tab_completeness'):
+            if self.last_passed_layer_id:
+                self.tab_completeness.set_quality_check_state(True, self.last_passed_layer_id)
+            else:
+                self.tab_completeness.set_quality_check_state(False)
+        elif index == 2 and hasattr(self, 'tab_gpkg_excel'):
+            self.tab_gpkg_excel.check_buttons_state()
+
+    def open_default_folder(self):
+        """Opens the default project folder in Windows File Explorer."""
+        open_default_folder_in_explorer()
 
     def set_active_tab(self, index: int):
         if 0 <= index < self.tabWidget.count():
             self.tabWidget.setCurrentIndex(index)
-            if index == 0:
-                self.tab_checker.populate_layers()
-            elif index == 1:
-                self.tab_completeness.populate_layers()
+            self.on_tab_changed(index)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        from qgis.PyQt.QtWidgets import QApplication
+        screen = QApplication.screenAt(self.pos()) or QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            new_w = min(self.width(), int(avail.width() * 0.95))
+            new_h = min(self.height(), int(avail.height() * 0.90))
+            if new_w != self.width() or new_h != self.height():
+                self.resize(new_w, new_h)
 
     def reset_all_modules(self):
         """Resets all fields in all postprocessing modules to their default values."""
-        if hasattr(self, 'tab_checker') and hasattr(self.tab_checker, 'reset_fields'):
-            self.tab_checker.reset_fields()
-        if hasattr(self, 'tab_completeness') and hasattr(self.tab_completeness, 'reset_fields'):
-            self.tab_completeness.reset_fields()
-        if hasattr(self, 'tab_gpkg_excel') and hasattr(self.tab_gpkg_excel, 'reset_fields'):
-            self.tab_gpkg_excel.reset_fields()
-        self.set_active_tab(0)
+        self.last_passed_layer_id = None
+        for widget, _, _ in self.tabs:
+            if hasattr(widget, 'reset_fields'):
+                widget.reset_fields()
+        if 0 < self.tabWidget.count():
+            self.tabWidget.setCurrentIndex(0)
 
     def closeEvent(self, event):
         """Resets all fields in all modules when the dialog is closed."""

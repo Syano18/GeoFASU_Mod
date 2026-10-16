@@ -47,31 +47,42 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         self.outputDirWidget.setFilePath(default_dir)
         self.typeofS.setFocus()
 
+    def log(self, message: str, level: str = "INFO"):
+        """Appends a line of text to the logs widget with level indicator."""
+        prefix = {
+            "INFO": "",
+            "SUCCESS": "✓ ",
+            "WARNING": "⚠ ",
+            "ERROR": "✗ ",
+        }.get(level.upper(), "")
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.appendPlainText(f"{prefix}{message}")
+            self.logsTextEdit.verticalScrollBar().setValue(
+                self.logsTextEdit.verticalScrollBar().maximum()
+            )
+
     def run_process(self):
         """Main function to execute the entire process when the 'Run' button is clicked."""
+        self.logsTextEdit.clear()
+        self.log("STATUS: RUNNING...", "INFO")
         csv_path = self.csvFileWidget.filePath().strip()
         out_dir = self.outputDirWidget.filePath().strip()
         folder_name = self.typeofS.text().strip()
 
         # --- 1. Input Validation ---
         if not all([csv_path, out_dir, folder_name]):
-            QMessageBox.warning(
-                self,
-                "Missing Input",
-                "Please provide all inputs: Excel file, output directory, and survey name.",
-            )
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log("Please provide all inputs: Excel file, output directory, and survey name.", "WARNING")
             return
 
         if not csv_path.lower().endswith(('.xlsx', '.xls')):
-            QMessageBox.warning(
-                self,
-                "Invalid File Type",
-                "Please select an Excel file (.xlsx).",
-            )
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log("Invalid File Type: Please select an Excel file (.xlsx).", "WARNING")
             return
 
         self.runButton.setEnabled(False)
         self.progressBar.setValue(0)
+        self.log(f"Starting conversion for survey '{folder_name}'...", "INFO")
         QCoreApplication.processEvents()
 
         try:
@@ -79,6 +90,7 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
             df = self._read_and_combine_sheets(csv_path)
 
             if df is None or df.empty:
+                self.log("STATUS: FAILED ✗", "ERROR")
                 return
 
             # --- 3. Create Output Directories ---
@@ -103,14 +115,16 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
 
             self.progressBar.setValue(100)
             QCoreApplication.processEvents()
-            QMessageBox.information(self, "Success", "GeoPackages created successfully.")
+            self.log("STATUS: COMPLETED ✓", "SUCCESS")
+            self.log(f"GeoPackages created successfully for survey '{folder_name}'! ✓", "SUCCESS")
+            self.log(f"Saved to: {project_folder}", "INFO")
             self.process_completed.emit(folder_name, out_dir)
 
         except Exception as e:
-            QMessageBox.critical(self, "An Unexpected Error Occurred", f"Error: {e}")
+            self.log("STATUS: FAILED ✗", "ERROR")
+            self.log(f"An unexpected error occurred: {e}", "ERROR")
         finally:
             self.runButton.setEnabled(True)
-            self.reset_fields()
 
     def _read_and_combine_sheets(self, csv_path):
         """
@@ -124,11 +138,7 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         try:
             df_sample = pd.read_excel(csv_path, sheet_name='Sample SSU', dtype=str)
         except (ValueError, KeyError):
-            QMessageBox.critical(
-                self,
-                "Required Sheet Missing",
-                "The required sheet 'Sample SSU' was not found in the Excel file. The process cannot continue.",
-            )
+            self.log("The required sheet 'Sample SSU' was not found in the Excel file. The process cannot continue.", "ERROR")
             return None
 
         # --- 2. Read the OPTIONAL 'Replacement SSU' sheet ---
@@ -143,12 +153,12 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
 
         # --- 4. Data Cleaning and Validation ---
         if 'WKT' not in df.columns:
-            QMessageBox.critical(self, "Input Error", "A 'WKT' column is required but was not found.")
+            self.log("A 'WKT' column is required in the Excel file but was not found.", "ERROR")
             return None
             
         df = df.dropna(subset=['WKT'])
         if df.empty:
-            QMessageBox.warning(self, "No Valid Geometries", "No rows with valid WKT geometry were found after cleaning.")
+            self.log("No rows with valid WKT geometry were found after cleaning.", "WARNING")
             return None
 
         df = df.fillna("")
@@ -228,6 +238,13 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
 
             count += 1
 
+    def clear_logs(self):
+        """Clears the execution logs and resets progress bar."""
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            self.logsTextEdit.clear()
+        if hasattr(self, 'progressBar') and self.progressBar:
+            self.progressBar.setValue(0)
+
     def reset_fields(self):
         """Resets all input fields and the progress bar to their default state."""
         self.csvFileWidget.setFilePath("")
@@ -236,6 +253,7 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
         self.typeofS.clear()
         self.progressBar.setValue(0)
         self.runButton.setEnabled(True)
+        self.clear_logs()
 
     def closeEvent(self, event):
         """Ensures fields are reset when the dialog is closed."""
