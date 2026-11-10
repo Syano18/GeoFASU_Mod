@@ -45,7 +45,7 @@ def is_null_or_empty(val):
 
 
 def to_int_or_none(val):
-    """Converts a value to int if possible (handles int, float strings like '6.0', '1', etc.)."""
+    """Converts a value to int if possible (handles int, float strings like '6.0', '1', and '0 No Changes')."""
     if is_null_or_empty(val):
         return None
     s = str(val).strip()
@@ -55,6 +55,12 @@ def to_int_or_none(val):
             return int(f)
     except (ValueError, TypeError):
         pass
+    m = re.match(r"^([0-9]+)\b", s)
+    if m:
+        try:
+            return int(m.group(1))
+        except (ValueError, TypeError):
+            pass
     return None
 
 
@@ -85,6 +91,94 @@ def find_field_name(layer, target_name, alternatives=None):
                 return f
 
     return None
+
+
+def is_selected_ssu_1(val):
+    """
+    Checks if a Selected_SSU value represents 1
+    (handles int 1, float 1.0, string '1', '1 - Sample SSU', etc.).
+    """
+    if is_null_or_empty(val):
+        return False
+    v_int = to_int_or_none(val)
+    if v_int == 1:
+        return True
+    s = str(val).strip().lower()
+    if s == "1":
+        return True
+    if s.startswith("1") and len(s) > 1 and not s[1].isdigit():
+        return True
+    if "sample" in s and "replacement" not in s and "additional" not in s:
+        return True
+    return False
+
+
+def standardize_selected_ssu(val):
+    """
+    Standardizes Selected_SSU values to PSA GeoFASU standard format:
+    '1 - Sample SSU', '2 - Replacement SSU', '3 - Additional Replacement SSU'.
+    """
+    if is_null_or_empty(val):
+        return val
+    s = str(val).strip()
+    v_int = to_int_or_none(s)
+    s_lower = s.lower()
+    if (
+        v_int == 1
+        or s.startswith("1")
+        or ("sample" in s_lower and "replacement" not in s_lower and "additional" not in s_lower)
+    ):
+        return "1 - Sample SSU"
+    elif (
+        v_int == 2
+        or s.startswith("2")
+        or ("replacement" in s_lower and "additional" not in s_lower)
+    ):
+        return "2 - Replacement SSU"
+    elif (
+        v_int == 3
+        or s.startswith("3")
+        or ("additional" in s_lower)
+    ):
+        return "3 - Additional Replacement SSU"
+    return s
+
+
+def standardize_update_code(val, is_int=False):
+    """
+    Standardizes Update Codes value to single digit code ('0'..'9' or int 0..9)
+    handling text like '0 No Changes', '9 Not a Permanent Resident...', etc.
+    Valid update codes: 0, 1, 2, 3, 4, 5, 6, 8, 9
+    """
+    if is_null_or_empty(val):
+        return None
+    s = str(val).strip()
+    v_int = to_int_or_none(s)
+    if v_int is not None and v_int in (0, 1, 2, 3, 4, 5, 6, 8, 9):
+        return v_int if is_int else str(v_int)
+    m = re.match(r"^([0-9])\b", s)
+    if m:
+        digit = int(m.group(1))
+        if digit in (0, 1, 2, 3, 4, 5, 6, 8, 9):
+            return digit if is_int else str(digit)
+    s_lower = s.lower()
+    desc_map = {
+        "no change": 0,
+        "change of household head": 1,
+        "correction of name": 2,
+        "correction of address": 2,
+        "additional household": 3,
+        "merged with another household": 4,
+        "new occupant": 5,
+        "household permanently move out": 6,
+        "permanently move out": 6,
+        "no longer used as a dwelling unit": 8,
+        "not a permanent resident": 9,
+    }
+    for desc_key, code_val in desc_map.items():
+        if desc_key in s_lower:
+            return code_val if is_int else str(code_val)
+    return v_int if is_int and v_int is not None else s
 
 
 def apply_error_symbology(layer):
@@ -315,6 +409,146 @@ class CheckerDialog(QDialog, FORM_CLASS):
                 )
                 self.progressBar.setValue(0)
                 return
+
+            # Auto-assign Update Codes for records where Selected_SSU == 1 and Update Codes is Null
+            f_sel = find_field_name(
+                sample_layer,
+                "Selected_SSU",
+                ["Selected SSU", "selected_ssu", "SelectedSSU"],
+            )
+            f_hhhead = find_field_name(
+                sample_layer,
+                "HH_Head",
+                [
+                    "hh_head",
+                    "HH Head",
+                    "hhhead",
+                    "Household_Head",
+                    "Head",
+                    "hh_head_name",
+                    "head_name",
+                    "HH_HEAD",
+                ],
+            )
+
+            f_sel_idx = sample_layer.fields().indexOf(f_sel) if f_sel else -1
+            f_uc_idx = sample_layer.fields().indexOf(f_uc)
+            uc_field = sample_layer.fields().field(f_uc_idx)
+            is_int_field = uc_field.isNumeric()
+            val_9 = 9 if is_int_field else "9"
+            val_6 = 6 if is_int_field else "6"
+
+            target_head_codes = ("VHU", "NUR", "VRH", "VBLDG")
+            updates_dict = {}
+            auto_updated_logs = []
+            std_sel_logs = []
+            std_uc_logs = []
+
+            for feat in sample_layer.getFeatures():
+                feat_updates = {}
+                b = str(feat[f_bsn]).strip() if f_bsn and not is_null_or_empty(feat[f_bsn]) else "-"
+                hu = str(feat[f_husn]).strip() if f_husn and not is_null_or_empty(feat[f_husn]) else "-"
+                h = str(feat[f_hsn]).strip() if f_hsn and not is_null_or_empty(feat[f_hsn]) else "-"
+
+                # 1. Inspect and standardize Selected_SSU
+                raw_sel = feat[f_sel] if f_sel else None
+                std_sel = standardize_selected_ssu(raw_sel)
+                if f_sel and not is_null_or_empty(raw_sel) and str(raw_sel).strip() != str(std_sel):
+                    feat_updates[f_sel_idx] = std_sel
+                    std_sel_logs.append(
+                        f"BSN={b}, HUSN={hu}, HSN={h} → Selected_SSU: '{raw_sel}' => '{std_sel}'"
+                    )
+
+                effective_sel = std_sel if std_sel is not None else raw_sel
+
+                # 2. Inspect and standardize or auto-assign Update Codes
+                raw_uc = feat[f_uc]
+                if is_null_or_empty(raw_uc):
+                    if not f_sel or is_selected_ssu_1(effective_sel):
+                        hh_raw = (
+                            str(feat[f_hhhead]).strip()
+                            if f_hhhead and not is_null_or_empty(feat[f_hhhead])
+                            else ""
+                        )
+                        hh_upper = hh_raw.upper()
+
+                        is_vhu_nur_vrh_vbldg = (
+                            hh_upper in target_head_codes
+                            or any(
+                                hh_upper.startswith(f"{t} ")
+                                or hh_upper.startswith(f"{t}-")
+                                or hh_upper.startswith(f"{t}:")
+                                or hh_upper.startswith(f"{t}(")
+                                for t in target_head_codes
+                            )
+                        )
+
+                        if is_vhu_nur_vrh_vbldg:
+                            code_to_assign = val_9
+                            code_label = "9 (Not a Permanent Resident of the Housing Unit)"
+                        else:
+                            code_to_assign = val_6
+                            code_label = "6 (Household Permanently Move Out)"
+
+                        feat_updates[f_uc_idx] = code_to_assign
+                        auto_updated_logs.append(
+                            f"BSN={b}, HUSN={hu}, HSN={h} (HH_Head='{hh_raw or '-'}') → Assigned Update Code {code_label}"
+                        )
+                else:
+                    std_uc = standardize_update_code(raw_uc, is_int=is_int_field)
+                    if str(std_uc) != str(raw_uc):
+                        feat_updates[f_uc_idx] = std_uc
+                        std_uc_logs.append(
+                            f"BSN={b}, HUSN={hu}, HSN={h} → Update Code: '{raw_uc}' => '{std_uc}'"
+                        )
+
+                if feat_updates:
+                    updates_dict[feat.id()] = feat_updates
+
+            if updates_dict:
+                if sample_layer.isEditable():
+                    sample_layer.commitChanges()
+                sample_layer.startEditing()
+                for f_id, attr_map in updates_dict.items():
+                    for attr_idx, new_val in attr_map.items():
+                        sample_layer.changeAttributeValue(f_id, attr_idx, new_val)
+                sample_layer.commitChanges()
+                sample_layer.dataProvider().changeAttributeValues(updates_dict)
+                sample_layer.updateFields()
+                sample_layer.updateExtents()
+                sample_layer.triggerRepaint()
+                if hasattr(self, "iface") and self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                    self.iface.mapCanvas().refresh()
+
+                if std_sel_logs:
+                    self.log(
+                        f"Standardized Selected_SSU format for {len(std_sel_logs)} record(s):",
+                        "INFO"
+                    )
+                    for item in std_sel_logs[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(std_sel_logs) > 10:
+                        self.log(f"  • ... and {len(std_sel_logs) - 10} more records.", "INFO")
+
+                if std_uc_logs:
+                    self.log(
+                        f"Standardized Update Codes format for {len(std_uc_logs)} record(s):",
+                        "INFO"
+                    )
+                    for item in std_uc_logs[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(std_uc_logs) > 10:
+                        self.log(f"  • ... and {len(std_uc_logs) - 10} more records.", "INFO")
+
+                if auto_updated_logs:
+                    self.log(
+                        f"Auto-assigned Update Codes for {len(auto_updated_logs)} record(s) with Null Update Code:",
+                        "INFO"
+                    )
+                    for item in auto_updated_logs[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(auto_updated_logs) > 10:
+                        self.log(f"  • ... and {len(auto_updated_logs) - 10} more records.", "INFO")
 
             self.progressBar.setValue(15)
             QCoreApplication.processEvents()

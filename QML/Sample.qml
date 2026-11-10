@@ -1390,6 +1390,7 @@
   </attributeactions>
   <attributetableconfig actionWidgetStyle="dropDown" sortExpression="" sortOrder="0">
     <columns>
+      <column width="-1" name="fid" type="field" hidden="0"/>
       <column width="-1" name="GEOID" type="field" hidden="0"/>
       <column width="-1" name="Round" type="field" hidden="0"/>
       <column width="-1" name="Year" type="field" hidden="0"/>
@@ -1418,7 +1419,6 @@
       <column width="-1" name="n_address" type="field" hidden="0"/>
       <column width="-1" name="n_husn" type="field" hidden="0"/>
       <column width="-1" name="n_hsn" type="field" hidden="0"/>
-      <column width="-1" name="fid" type="field" hidden="1"/>
       <column width="-1" name="uc_6_ind" type="field" hidden="0"/>
       <column width="-1" name="m_uc_ind" type="field" hidden="0"/>
       <column width="-1" name="m_uc" type="field" hidden="0"/>

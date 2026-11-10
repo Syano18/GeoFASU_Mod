@@ -244,12 +244,35 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
                                 attrs.append(None)
                             else:
                                 attrs.append(str(val).strip())
+                        elif norm_col in ("selectedssu", "selected_ssu"):
+                            raw_str = "" if pd.isna(val) else str(val).strip()
+                            # Standardize Selected_SSU to PSA standard labels
+                            if (
+                                raw_str == "1"
+                                or raw_str.startswith("1")
+                                or ("sample" in raw_str.lower() and "replacement" not in raw_str.lower() and "additional" not in raw_str.lower())
+                            ):
+                                attrs.append("1 - Sample SSU")
+                            elif (
+                                raw_str == "2"
+                                or raw_str.startswith("2")
+                                or ("replacement" in raw_str.lower() and "additional" not in raw_str.lower())
+                            ):
+                                attrs.append("2 - Replacement SSU")
+                            elif (
+                                raw_str == "3"
+                                or raw_str.startswith("3")
+                                or ("additional" in raw_str.lower())
+                            ):
+                                attrs.append("3 - Additional Replacement SSU")
+                            else:
+                                attrs.append(raw_str)
                         elif norm_col in ("updatecodes", "updatecode", "updatescodes", "uc"):
                             raw_str = "" if pd.isna(val) else str(val).strip()
                             if raw_str == "" or raw_str.lower() in ("none", "nan", "null"):
                                 # Copy the code used on Sample SSU ('0' for Sample SSU, None for Replacement SSU)
                                 sel_val = str(row.get("Selected_SSU", "")).strip()
-                                if sel_val == "1" or sel_val.startswith("1"):
+                                if sel_val == "1" or sel_val.startswith("1") or "sample" in sel_val.lower():
                                     attrs.append("0")
                                 else:
                                     attrs.append(None)

@@ -49,7 +49,7 @@ def is_null_or_empty(val):
 
 
 def to_int_or_none(val):
-    """Converts a value to int if possible (handles int, float strings like '6.0')."""
+    """Converts a value to int if possible (handles int, float strings like '6.0', '1', and '0 No Changes')."""
     if is_null_or_empty(val):
         return None
     s = str(val).strip()
@@ -59,6 +59,12 @@ def to_int_or_none(val):
             return int(f)
     except (ValueError, TypeError):
         pass
+    m = re.match(r"^([0-9]+)\b", s)
+    if m:
+        try:
+            return int(m.group(1))
+        except (ValueError, TypeError):
+            pass
     return None
 
 
@@ -101,12 +107,82 @@ def is_selected_ssu_1(val):
     v_int = to_int_or_none(val)
     if v_int == 1:
         return True
-    s = str(val).strip()
+    s = str(val).strip().lower()
     if s == "1":
         return True
     if s.startswith("1") and len(s) > 1 and not s[1].isdigit():
         return True
+    if "sample" in s and "replacement" not in s and "additional" not in s:
+        return True
     return False
+
+
+def standardize_selected_ssu(val):
+    """
+    Standardizes Selected_SSU values to PSA GeoFASU standard format:
+    '1 - Sample SSU', '2 - Replacement SSU', '3 - Additional Replacement SSU'.
+    """
+    if is_null_or_empty(val):
+        return val
+    s = str(val).strip()
+    v_int = to_int_or_none(s)
+    s_lower = s.lower()
+    if (
+        v_int == 1
+        or s.startswith("1")
+        or ("sample" in s_lower and "replacement" not in s_lower and "additional" not in s_lower)
+    ):
+        return "1 - Sample SSU"
+    elif (
+        v_int == 2
+        or s.startswith("2")
+        or ("replacement" in s_lower and "additional" not in s_lower)
+    ):
+        return "2 - Replacement SSU"
+    elif (
+        v_int == 3
+        or s.startswith("3")
+        or ("additional" in s_lower)
+    ):
+        return "3 - Additional Replacement SSU"
+    return s
+
+
+def standardize_update_code(val, is_int=False):
+    """
+    Standardizes Update Codes value to single digit code ('0'..'9' or int 0..9)
+    handling text like '0 No Changes', '9 Not a Permanent Resident...', etc.
+    Valid update codes: 0, 1, 2, 3, 4, 5, 6, 8, 9
+    """
+    if is_null_or_empty(val):
+        return None
+    s = str(val).strip()
+    v_int = to_int_or_none(s)
+    if v_int is not None and v_int in (0, 1, 2, 3, 4, 5, 6, 8, 9):
+        return v_int if is_int else str(v_int)
+    m = re.match(r"^([0-9])\b", s)
+    if m:
+        digit = int(m.group(1))
+        if digit in (0, 1, 2, 3, 4, 5, 6, 8, 9):
+            return digit if is_int else str(digit)
+    s_lower = s.lower()
+    desc_map = {
+        "no change": 0,
+        "change of household head": 1,
+        "correction of name": 2,
+        "correction of address": 2,
+        "additional household": 3,
+        "merged with another household": 4,
+        "new occupant": 5,
+        "household permanently move out": 6,
+        "permanently move out": 6,
+        "no longer used as a dwelling unit": 8,
+        "not a permanent resident": 9,
+    }
+    for desc_key, code_val in desc_map.items():
+        if desc_key in s_lower:
+            return code_val if is_int else str(code_val)
+    return v_int if is_int and v_int is not None else s
 
 
 def apply_error_symbology(layer):
@@ -559,6 +635,149 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             self.progressBar.setValue(25)
             QCoreApplication.processEvents()
 
+            # Auto-assign and standardize Update Codes and Selected_SSU
+            f_sample_sel = find_field_name(
+                sample_layer,
+                "Selected_SSU",
+                ["Selected SSU", "selected_ssu", "SelectedSSU"],
+            )
+            f_sample_head = find_field_name(
+                sample_layer,
+                "HH_Head",
+                [
+                    "hh_head",
+                    "HH Head",
+                    "hhhead",
+                    "Household_Head",
+                    "Head",
+                    "hh_head_name",
+                    "head_name",
+                    "HH_HEAD",
+                ],
+            )
+            f_bsn_chk = find_field_name(sample_layer, "BSN", ["bsn", "BS_No"])
+            f_husn_chk = find_field_name(sample_layer, "HUSN", ["husn", "HU_SN"])
+            f_hsn_chk = find_field_name(sample_layer, "HSN", ["hsn"])
+
+            f_sel_idx_chk = sample_layer.fields().indexOf(f_sample_sel) if f_sample_sel else -1
+            f_uc_idx_chk = sample_layer.fields().indexOf(f_uc)
+            uc_field_chk = sample_layer.fields().field(f_uc_idx_chk)
+            is_int_chk = uc_field_chk.isNumeric()
+            val_9_chk = 9 if is_int_chk else "9"
+            val_6_chk = 6 if is_int_chk else "6"
+
+            target_head_codes_chk = ("VHU", "NUR", "VRH", "VBLDG")
+            updates_dict_chk = {}
+            auto_updated_logs_chk = []
+            std_sel_logs_chk = []
+            std_uc_logs_chk = []
+
+            for feat in sample_layer.getFeatures():
+                feat_chk_updates = {}
+                b = str(feat[f_bsn_chk]).strip() if f_bsn_chk and not is_null_or_empty(feat[f_bsn_chk]) else "-"
+                hu = str(feat[f_husn_chk]).strip() if f_husn_chk and not is_null_or_empty(feat[f_husn_chk]) else "-"
+                h = str(feat[f_hsn_chk]).strip() if f_hsn_chk and not is_null_or_empty(feat[f_hsn_chk]) else "-"
+
+                # 1. Standardize Selected_SSU
+                raw_sel = feat[f_sample_sel] if f_sample_sel else None
+                std_sel = standardize_selected_ssu(raw_sel)
+                if f_sample_sel and not is_null_or_empty(raw_sel) and str(raw_sel).strip() != str(std_sel):
+                    feat_chk_updates[f_sel_idx_chk] = std_sel
+                    std_sel_logs_chk.append(
+                        f"BSN={b}, HUSN={hu}, HSN={h} → Selected_SSU: '{raw_sel}' => '{std_sel}'"
+                    )
+
+                effective_sel = std_sel if std_sel is not None else raw_sel
+
+                # 2. Standardize or Auto-assign Update Codes
+                raw_uc = feat[f_uc]
+                if is_null_or_empty(raw_uc):
+                    if not f_sample_sel or is_selected_ssu_1(effective_sel):
+                        hh_raw = (
+                            str(feat[f_sample_head]).strip()
+                            if f_sample_head and not is_null_or_empty(feat[f_sample_head])
+                            else ""
+                        )
+                        hh_upper = hh_raw.upper()
+
+                        is_vhu_nur_vrh_vbldg = (
+                            hh_upper in target_head_codes_chk
+                            or any(
+                                hh_upper.startswith(f"{t} ")
+                                or hh_upper.startswith(f"{t}-")
+                                or hh_upper.startswith(f"{t}:")
+                                or hh_upper.startswith(f"{t}(")
+                                for t in target_head_codes_chk
+                            )
+                        )
+
+                        if is_vhu_nur_vrh_vbldg:
+                            code_to_assign = val_9_chk
+                            code_label = "9 (Not a Permanent Resident of the Housing Unit)"
+                        else:
+                            code_to_assign = val_6_chk
+                            code_label = "6 (Household Permanently Move Out)"
+
+                        feat_chk_updates[f_uc_idx_chk] = code_to_assign
+                        auto_updated_logs_chk.append(
+                            f"BSN={b}, HUSN={hu}, HSN={h} (HH_Head='{hh_raw or '-'}') → Assigned Update Code {code_label}"
+                        )
+                else:
+                    std_uc = standardize_update_code(raw_uc, is_int=is_int_chk)
+                    if str(std_uc) != str(raw_uc):
+                        feat_chk_updates[f_uc_idx_chk] = std_uc
+                        std_uc_logs_chk.append(
+                            f"BSN={b}, HUSN={hu}, HSN={h} → Update Code: '{raw_uc}' => '{std_uc}'"
+                        )
+
+                if feat_chk_updates:
+                    updates_dict_chk[feat.id()] = feat_chk_updates
+
+            if updates_dict_chk:
+                if sample_layer.isEditable():
+                    sample_layer.commitChanges()
+                sample_layer.startEditing()
+                for f_id, attr_map in updates_dict_chk.items():
+                    for attr_idx, new_val in attr_map.items():
+                        sample_layer.changeAttributeValue(f_id, attr_idx, new_val)
+                sample_layer.commitChanges()
+                sample_layer.dataProvider().changeAttributeValues(updates_dict_chk)
+                sample_layer.updateFields()
+                sample_layer.updateExtents()
+                sample_layer.triggerRepaint()
+                if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                    self.iface.mapCanvas().refresh()
+
+                if std_sel_logs_chk:
+                    self.log(
+                        f"Standardized Selected_SSU format for {len(std_sel_logs_chk)} record(s):",
+                        "INFO",
+                    )
+                    for item in std_sel_logs_chk[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(std_sel_logs_chk) > 10:
+                        self.log(f"  • ... and {len(std_sel_logs_chk) - 10} more records.", "INFO")
+
+                if std_uc_logs_chk:
+                    self.log(
+                        f"Standardized Update Codes format for {len(std_uc_logs_chk)} record(s):",
+                        "INFO",
+                    )
+                    for item in std_uc_logs_chk[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(std_uc_logs_chk) > 10:
+                        self.log(f"  • ... and {len(std_uc_logs_chk) - 10} more records.", "INFO")
+
+                if auto_updated_logs_chk:
+                    self.log(
+                        f"Auto-assigned Update Codes for {len(auto_updated_logs_chk)} record(s) with Null Update Code:",
+                        "INFO",
+                    )
+                    for item in auto_updated_logs_chk[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(auto_updated_logs_chk) > 10:
+                        self.log(f"  • ... and {len(auto_updated_logs_chk) - 10} more records.", "INFO")
+
             sample_valid_count = 0
             code_counts = {c: 0 for c in range(7)}
             code_6_skipped = 0
@@ -587,8 +806,7 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             ref_selected_count = 0
             for feat in ref_layer.getFeatures():
                 raw_sel = feat[f_sel]
-                sel_int = to_int_or_none(raw_sel)
-                if sel_int == 1:
+                if is_selected_ssu_1(raw_sel):
                     ref_selected_count += 1
 
             self.progressBar.setValue(85)
@@ -817,49 +1035,38 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
         return nos, mun
 
-    def remove_or_hide_fid_column(self, layer):
-        """Hides the fid/ogc_fid column from the attribute table and form, and deletes it if the provider supports it."""
+    def reorder_fid_to_first_column(self, layer):
+        """Moves fid/ogc_fid to the first column and ensures it is visible in the attribute table and form."""
         if not layer or not layer.isValid():
             return
 
-        # 1. Hide in Attribute Table Config
+        # 1. Attribute table config: make fid visible and position at index 0
         try:
             config = layer.attributeTableConfig()
             cols = config.columns()
-            modified = False
+            fid_col = None
+            other_cols = []
             for c in cols:
                 if c.name.lower() in ("fid", "ogc_fid"):
-                    if not c.hidden:
-                        c.hidden = True
-                        modified = True
-            if modified:
-                config.setColumns(cols)
+                    c.hidden = False
+                    fid_col = c
+                else:
+                    other_cols.append(c)
+            if fid_col:
+                config.setColumns([fid_col] + other_cols)
                 layer.setAttributeTableConfig(config)
         except Exception:
             pass
 
-        # 2. Hide in Field Editor Widgets / Forms
+        # 2. Make fid visible and editable in editor widget setup
         try:
             for idx, field in enumerate(layer.fields()):
                 if field.name().lower() in ("fid", "ogc_fid"):
-                    layer.setEditorWidgetSetup(idx, QgsEditorWidgetSetup("Hidden", {}))
+                    layer.setEditorWidgetSetup(idx, QgsEditorWidgetSetup("TextEdit", {}))
         except Exception:
             pass
 
-        # 3. If dataProvider supports deleting attributes (e.g. Memory, Shapefile), remove the field
-        try:
-            caps = layer.dataProvider().capabilities()
-            if caps & QgsVectorDataProvider.DeleteAttributes:
-                indices_to_del = [
-                    idx for idx, f in enumerate(layer.fields())
-                    if f.name().lower() in ("fid", "ogc_fid")
-                ]
-                if indices_to_del:
-                    layer.dataProvider().deleteAttributes(indices_to_del)
-                    layer.updateFields()
-        except Exception:
-            pass
-
+        layer.updateFields()
         layer.triggerRepaint()
         if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
             self.iface.mapCanvas().refresh()
@@ -950,6 +1157,15 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 if rf:
                     field_map[sf.name()] = rf
 
+            s_sel_col = find_field_name(sample_layer, "Selected_SSU", ["Selected SSU", "selected_ssu", "SelectedSSU"])
+            s_uc_col = find_field_name(sample_layer, "Update Codes", ["Update_Codes", "update codes", "update_code", "UC"])
+            s_head_col = find_field_name(sample_layer, "HH_Head", ["hh_head", "HH Head", "Household_Head", "Head", "HH_HEAD"])
+
+            f_uc_idx_chk = sample_layer.fields().indexOf(s_uc_col) if s_uc_col else -1
+            is_int_uc = sample_layer.fields().field(f_uc_idx_chk).isNumeric() if f_uc_idx_chk >= 0 else False
+            val_9_val = 9 if is_int_uc else "9"
+            val_6_val = 6 if is_int_uc else "6"
+
             missing_records_log = []
 
             for r_feat in ref_layer.getFeatures():
@@ -965,6 +1181,25 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
                     for s_col, r_col in field_map.items():
                         new_feat[s_col] = r_feat[r_col]
+
+                    # Standardize Selected_SSU
+                    if s_sel_col and s_sel_col in field_map:
+                        new_feat[s_sel_col] = standardize_selected_ssu(new_feat[s_sel_col])
+
+                    # Standardize or assign Update Codes
+                    if s_uc_col:
+                        raw_uc = new_feat[s_uc_col]
+                        if is_null_or_empty(raw_uc):
+                            if is_selected_ssu_1(new_feat[s_sel_col] if s_sel_col else None):
+                                hh_raw = str(new_feat[s_head_col]).strip() if s_head_col and not is_null_or_empty(new_feat[s_head_col]) else ""
+                                hh_upper = hh_raw.upper()
+                                is_vhu = (
+                                    hh_upper in ("VHU", "NUR", "VRH", "VBLDG")
+                                    or any(hh_upper.startswith(f"{t} ") or hh_upper.startswith(f"{t}-") or hh_upper.startswith(f"{t}:") or hh_upper.startswith(f"{t}(") for t in ("VHU", "NUR", "VRH", "VBLDG"))
+                                )
+                                new_feat[s_uc_col] = val_9_val if is_vhu else val_6_val
+                        else:
+                            new_feat[s_uc_col] = standardize_update_code(raw_uc, is_int=is_int_uc)
 
                     features_to_add.append(new_feat)
                     missing_records_log.append(f"BSN={b}, HUSN={hu}, HSN={h}")
@@ -1005,12 +1240,12 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                     "INFO"
                 )
 
-            # 4. PRE-SAVE VALIDATION on merged layer
+            # 4. PRE-SAVE VALIDATION AND FORMAT INSPECTION on merged layer
             self.progressBar.setValue(70)
             QCoreApplication.processEvents()
 
             self.log("-" * 55)
-            self.log("Running Pre-Save Validation on merged layer...", "INFO")
+            self.log("Inspecting merged Sample SSU layer for formatting and completeness...", "INFO")
 
             f_sel = find_field_name(
                 sample_layer,
@@ -1057,7 +1292,8 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 self.progressBar.setValue(0)
                 return
 
-            # Auto-assign Update Codes for records where Selected_SSU == 1 and Update Codes is Null
+            # Inspect and standardize Selected_SSU and Update Codes across the merged layer
+            f_sel_idx = sample_layer.fields().indexOf(f_sel)
             f_uc_idx = sample_layer.fields().indexOf(f_uc)
             uc_field = sample_layer.fields().field(f_uc_idx)
             is_int_field = uc_field.isNumeric()
@@ -1066,20 +1302,37 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
             target_head_codes = ("VHU", "NUR", "VRH", "VBLDG")
             updates_dict = {}
-            auto_updated_logs = []
+            std_sel_logs = []
+            std_uc_logs = []
+            auto_assigned_logs = []
 
             for feat in sample_layer.getFeatures():
+                feat_updates = {}
+                b = str(feat[s_bsn]).strip() if s_bsn and not is_null_or_empty(feat[s_bsn]) else "-"
+                hu = str(feat[s_husn]).strip() if s_husn and not is_null_or_empty(feat[s_husn]) else "-"
+                h = str(feat[s_hsn]).strip() if s_hsn and not is_null_or_empty(feat[s_hsn]) else "-"
+
+                # A. Inspect and standardize Selected_SSU
                 raw_sel = feat[f_sel]
-                if is_selected_ssu_1(raw_sel):
-                    raw_uc = feat[f_uc]
-                    if is_null_or_empty(raw_uc):
+                std_sel = standardize_selected_ssu(raw_sel)
+                if not is_null_or_empty(raw_sel) and str(raw_sel).strip() != str(std_sel):
+                    feat_updates[f_sel_idx] = std_sel
+                    std_sel_logs.append(
+                        f"BSN={b}, HUSN={hu}, HSN={h} → Selected_SSU: '{raw_sel}' => '{std_sel}'"
+                    )
+
+                effective_sel = std_sel if std_sel is not None else raw_sel
+
+                # B. Inspect and standardize / auto-assign Update Codes
+                raw_uc = feat[f_uc]
+                if is_null_or_empty(raw_uc):
+                    if is_selected_ssu_1(effective_sel):
                         hh_raw = (
                             str(feat[f_hhhead]).strip()
                             if f_hhhead and not is_null_or_empty(feat[f_hhhead])
                             else ""
                         )
                         hh_upper = hh_raw.upper()
-
                         is_vhu_nur_vrh_vbldg = (
                             hh_upper in target_head_codes
                             or any(
@@ -1090,7 +1343,6 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                                 for t in target_head_codes
                             )
                         )
-
                         if is_vhu_nur_vrh_vbldg:
                             code_to_assign = val_9
                             code_label = "9 (Not a Permanent Resident of the Housing Unit)"
@@ -1098,47 +1350,84 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                             code_to_assign = val_6
                             code_label = "6 (Household Permanently Move Out)"
 
-                        updates_dict[feat.id()] = {f_uc_idx: code_to_assign}
-                        b = str(feat[s_bsn]).strip() if s_bsn and not is_null_or_empty(feat[s_bsn]) else "-"
-                        hu = str(feat[s_husn]).strip() if s_husn and not is_null_or_empty(feat[s_husn]) else "-"
-                        h = str(feat[s_hsn]).strip() if s_hsn and not is_null_or_empty(feat[s_hsn]) else "-"
-                        auto_updated_logs.append(
+                        feat_updates[f_uc_idx] = code_to_assign
+                        auto_assigned_logs.append(
                             f"BSN={b}, HUSN={hu}, HSN={h} (HH_Head='{hh_raw or '-'}') → Assigned Update Code {code_label}"
                         )
+                else:
+                    std_uc = standardize_update_code(raw_uc, is_int=is_int_field)
+                    if str(std_uc) != str(raw_uc):
+                        feat_updates[f_uc_idx] = std_uc
+                        std_uc_logs.append(
+                            f"BSN={b}, HUSN={hu}, HSN={h} → Update Code: '{raw_uc}' => '{std_uc}'"
+                        )
+
+                if feat_updates:
+                    updates_dict[feat.id()] = feat_updates
 
             if updates_dict:
-                success_update = sample_layer.dataProvider().changeAttributeValues(updates_dict)
-                if not success_update:
-                    sample_layer.startEditing()
-                    for f_id, attr_map in updates_dict.items():
-                        for attr_idx, new_val in attr_map.items():
-                            sample_layer.changeAttributeValue(f_id, attr_idx, new_val)
+                if sample_layer.isEditable():
                     sample_layer.commitChanges()
-                else:
-                    sample_layer.updateFields()
-
+                sample_layer.startEditing()
+                for f_id, attr_map in updates_dict.items():
+                    for attr_idx, new_val in attr_map.items():
+                        sample_layer.changeAttributeValue(f_id, attr_idx, new_val)
+                sample_layer.commitChanges()
+                sample_layer.dataProvider().changeAttributeValues(updates_dict)
+                sample_layer.updateFields()
                 sample_layer.updateExtents()
                 sample_layer.triggerRepaint()
                 if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
                     self.iface.mapCanvas().refresh()
 
-                self.log(
-                    f"Auto-assigned Update Codes for {len(auto_updated_logs)} record(s) where Selected_SSU = 1 with Null Update Code:",
-                    "INFO"
-                )
-                for item in auto_updated_logs[:10]:
-                    self.log(f"  • {item}", "INFO")
-                if len(auto_updated_logs) > 10:
-                    self.log(f"  • ... and {len(auto_updated_logs) - 10} more records.", "INFO")
+                if std_sel_logs:
+                    self.log(
+                        f"Standardized Selected_SSU format for {len(std_sel_logs)} record(s) to PSA standard:",
+                        "INFO",
+                    )
+                    for item in std_sel_logs[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(std_sel_logs) > 10:
+                        self.log(f"  • ... and {len(std_sel_logs) - 10} more records.", "INFO")
+
+                if std_uc_logs:
+                    self.log(
+                        f"Standardized Update Codes format for {len(std_uc_logs)} record(s):",
+                        "INFO",
+                    )
+                    for item in std_uc_logs[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(std_uc_logs) > 10:
+                        self.log(f"  • ... and {len(std_uc_logs) - 10} more records.", "INFO")
+
+                if auto_assigned_logs:
+                    self.log(
+                        f"Auto-assigned Update Codes for {len(auto_assigned_logs)} record(s) where Selected_SSU = 1 with Null Update Code:",
+                        "INFO",
+                    )
+                    for item in auto_assigned_logs[:10]:
+                        self.log(f"  • {item}", "INFO")
+                    if len(auto_assigned_logs) > 10:
+                        self.log(f"  • ... and {len(auto_assigned_logs) - 10} more records.", "INFO")
+            else:
+                self.log("All Selected_SSU and Update Codes records already follow the standard format.", "INFO")
 
             layer_errors = []
             selected_1_count = 0
 
             for feat in sample_layer.getFeatures():
-                raw_sel = feat[f_sel]
+                raw_sel = (
+                    updates_dict[feat.id()][f_sel_idx]
+                    if feat.id() in updates_dict and f_sel_idx in updates_dict[feat.id()]
+                    else feat[f_sel]
+                )
                 if is_selected_ssu_1(raw_sel):
                     selected_1_count += 1
-                    raw_uc = feat[f_uc]
+                    raw_uc = (
+                        updates_dict[feat.id()][f_uc_idx]
+                        if feat.id() in updates_dict and f_uc_idx in updates_dict[feat.id()]
+                        else feat[f_uc]
+                    )
                     if is_null_or_empty(raw_uc):
                         layer_errors.append(
                             (feat, "Selected_SSU is 1 but Update Codes is missing/null")
@@ -1255,10 +1544,8 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             out_gpkg_path = os.path.join(target_folder, out_file_name)
             source_path = sample_layer.source().split("|")[0]
 
-            # Remove / hide fid column from the layer view
-            self.remove_or_hide_fid_column(sample_layer)
-
             if os.path.exists(source_path) and os.path.abspath(source_path) == os.path.abspath(out_gpkg_path):
+                self.reorder_fid_to_first_column(sample_layer)
                 self.log(f"GeoPackage updated in-place at:\n  {out_gpkg_path}")
                 try:
                     out_qml_path = os.path.splitext(out_gpkg_path)[0] + ".qml"
@@ -1270,6 +1557,7 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 options.driverName = "GPKG"
                 options.fileEncoding = "UTF-8"
                 # Exclude fid / ogc_fid / layer / path from exported user attributes
+                # so that OGR auto-generates sequential FIDs starting from 1 with NO gaps
                 options.attributes = [
                     i for i, f in enumerate(sample_layer.fields())
                     if f.name().lower() not in ("fid", "ogc_fid", "layer", "path")
@@ -1294,6 +1582,13 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 )
                 if res == QgsVectorFileWriter.NoError or res == 0:
                     self.log(f"Exported merged GeoPackage to Validation Output:\n  {out_gpkg_path}", "SUCCESS")
+                    # Repoint active sample_layer to the newly exported GeoPackage with sequential FIDs
+                    try:
+                        sample_layer.setDataSource(out_gpkg_path, sample_layer.name(), "ogr")
+                    except Exception:
+                        pass
+                    # Reorder fid to first column and make it visible
+                    self.reorder_fid_to_first_column(sample_layer)
                     try:
                         out_qml_path = os.path.splitext(out_gpkg_path)[0] + ".qml"
                         sample_layer.saveNamedStyle(out_qml_path)
@@ -1311,10 +1606,14 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 self.log(f"• Missing Records Copied: {len(features_to_add)}", "INFO")
             else:
                 self.log("• Missing Records Copied: 0 (All reference records were already present)", "INFO")
-            if len(auto_updated_logs) > 0:
-                self.log(f"• Auto-assigned Update Codes: {len(auto_updated_logs)} (Null Update Code resolution)", "INFO")
+            if len(std_sel_logs) > 0:
+                self.log(f"• Standardized Selected_SSU Records: {len(std_sel_logs)}", "INFO")
+            if len(std_uc_logs) > 0:
+                self.log(f"• Standardized Update Codes: {len(std_uc_logs)}", "INFO")
+            if len(auto_assigned_logs) > 0:
+                self.log(f"• Auto-assigned Update Codes: {len(auto_assigned_logs)} (Null Update Code resolution)", "INFO")
             self.log(f"• Saved to: {out_gpkg_path}", "SUCCESS")
-            self.log("• FID column removed/hidden from attribute view.", "INFO")
+            self.log("• FID column moved to first column and arranged in sequence (1..N).", "INFO")
             self.progressBar.setValue(0)
 
         except Exception as e:

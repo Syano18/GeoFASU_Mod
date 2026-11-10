@@ -922,7 +922,7 @@
   </attributeactions>
   <attributetableconfig actionWidgetStyle="dropDown" sortExpression="" sortOrder="0">
     <columns>
-      <column hidden="1" type="field" name="fid" width="-1"/>
+      <column hidden="0" type="field" name="fid" width="-1"/>
       <column hidden="0" type="field" name="GEOID" width="-1"/>
       <column hidden="0" type="field" name="Round" width="-1"/>
       <column hidden="0" type="field" name="Year" width="-1"/>

@@ -1055,6 +1055,7 @@
   </attributeactions>
   <attributetableconfig actionWidgetStyle="dropDown" sortExpression="" sortOrder="0">
     <columns>
+      <column width="-1" name="fid" type="field" hidden="0"/>
       <column width="-1" name="Replicate_Number" type="field" hidden="0"/>
       <column width="-1" name="BSN" type="field" hidden="0"/>
       <column width="-1" name="HUSN" type="field" hidden="0"/>
@@ -1067,7 +1068,6 @@
       <column width="-1" name="n_address" type="field" hidden="0"/>
       <column width="-1" name="n_husn" type="field" hidden="0"/>
       <column width="-1" name="n_hsn" type="field" hidden="0"/>
-      <column width="-1" name="fid" type="field" hidden="1"/>
       <column width="-1" name="uc_6_ind" type="field" hidden="0"/>
       <column width="-1" name="WKT" type="field" hidden="0"/>
       <column width="-1" name="UC_2_ind" type="field" hidden="0"/>
