@@ -710,6 +710,43 @@
         </config>
       </editWidget>
     </field>
+    <field name="Update Codes" configurationFlags="NoFlag">
+      <editWidget type="ValueMap">
+        <config>
+          <Option type="Map">
+            <Option name="map" type="List">
+              <Option type="Map">
+                <Option value="0" name="0 No Changes" type="QString"/>
+              </Option>
+              <Option type="Map">
+                <Option value="1" name="1 Change of Household Head" type="QString"/>
+              </Option>
+              <Option type="Map">
+                <Option value="2" name="2 Correction of Name and/or Address" type="QString"/>
+              </Option>
+              <Option type="Map">
+                <Option value="3" name="3 Additional Household in the Housing Unit" type="QString"/>
+              </Option>
+              <Option type="Map">
+                <Option value="4" name="4 Merged with Another Household in the Same Housing Unit" type="QString"/>
+              </Option>
+              <Option type="Map">
+                <Option value="5" name="5 New Occupant in the Housing Unit" type="QString"/>
+              </Option>
+              <Option type="Map">
+                <Option value="6" name="6 Household Permanently Move Out" type="QString"/>
+              </Option>
+              <Option type="Map">
+                <Option value="8" name="8 No Longer Used as a Dwelling Unit" type="QString"/>
+              </Option>
+              <Option type="Map">
+                <Option value="9" name="9 Not a Permanent Resident of the Housing Unit" type="QString"/>
+              </Option>
+            </Option>
+          </Option>
+        </config>
+      </editWidget>
+    </field>
   </fieldConfiguration>
   <aliases>
     <alias name="" field="fid" index="0"/>
@@ -737,6 +774,7 @@
     <alias name="" field="Selected_SSU" index="22"/>
     <alias name="" field="inCentroid" index="23"/>
     <alias name="" field="orig_wkt" index="24"/>
+    <alias name="" field="Update Codes" index="25"/>
   </aliases>
   <splitPolicies>
     <policy policy="Duplicate" field="fid"/>
@@ -764,6 +802,7 @@
     <policy policy="Duplicate" field="Selected_SSU"/>
     <policy policy="Duplicate" field="inCentroid"/>
     <policy policy="Duplicate" field="orig_wkt"/>
+    <policy policy="Duplicate" field="Update Codes"/>
   </splitPolicies>
   <duplicatePolicies>
     <policy policy="Duplicate" field="fid"/>
@@ -791,6 +830,7 @@
     <policy policy="Duplicate" field="Selected_SSU"/>
     <policy policy="Duplicate" field="inCentroid"/>
     <policy policy="Duplicate" field="orig_wkt"/>
+    <policy policy="Duplicate" field="Update Codes"/>
   </duplicatePolicies>
   <defaults>
     <default expression="" field="fid" applyOnUpdate="0"/>
@@ -818,6 +858,7 @@
     <default expression="" field="Selected_SSU" applyOnUpdate="0"/>
     <default expression="" field="inCentroid" applyOnUpdate="0"/>
     <default expression="" field="orig_wkt" applyOnUpdate="0"/>
+    <default expression="" field="Update Codes" applyOnUpdate="0"/>
   </defaults>
   <constraints>
     <constraint notnull_strength="1" exp_strength="0" field="fid" unique_strength="1" constraints="3"/>
@@ -845,6 +886,7 @@
     <constraint notnull_strength="0" exp_strength="0" field="Selected_SSU" unique_strength="0" constraints="0"/>
     <constraint notnull_strength="0" exp_strength="0" field="inCentroid" unique_strength="0" constraints="0"/>
     <constraint notnull_strength="0" exp_strength="0" field="orig_wkt" unique_strength="0" constraints="0"/>
+    <constraint notnull_strength="0" exp_strength="0" field="Update Codes" unique_strength="0" constraints="0"/>
   </constraints>
   <constraintExpressions>
     <constraint exp="" field="fid" desc=""/>
@@ -872,6 +914,7 @@
     <constraint exp="" field="Selected_SSU" desc=""/>
     <constraint exp="" field="inCentroid" desc=""/>
     <constraint exp="" field="orig_wkt" desc=""/>
+    <constraint exp="" field="Update Codes" desc=""/>
   </constraintExpressions>
   <expressionfields/>
   <attributeactions>
@@ -879,7 +922,7 @@
   </attributeactions>
   <attributetableconfig actionWidgetStyle="dropDown" sortExpression="" sortOrder="0">
     <columns>
-      <column hidden="0" type="field" name="fid" width="-1"/>
+      <column hidden="1" type="field" name="fid" width="-1"/>
       <column hidden="0" type="field" name="GEOID" width="-1"/>
       <column hidden="0" type="field" name="Round" width="-1"/>
       <column hidden="0" type="field" name="Year" width="-1"/>
@@ -904,6 +947,7 @@
       <column hidden="0" type="field" name="Selected_SSU" width="-1"/>
       <column hidden="0" type="field" name="inCentroid" width="-1"/>
       <column hidden="0" type="field" name="orig_wkt" width="-1"/>
+      <column hidden="0" type="field" name="Update Codes" width="-1"/>
       <column hidden="1" type="actions" width="-1"/>
     </columns>
   </attributetableconfig>
@@ -961,6 +1005,7 @@ def my_form_open(dialog, layer, feature):
     <field editable="1" name="fid"/>
     <field editable="1" name="inCentroid"/>
     <field editable="1" name="orig_wkt"/>
+    <field editable="1" name="Update Codes"/>
   </editable>
   <labelOnTop>
     <field name="Address" labelOnTop="0"/>
@@ -988,6 +1033,7 @@ def my_form_open(dialog, layer, feature):
     <field name="fid" labelOnTop="0"/>
     <field name="inCentroid" labelOnTop="0"/>
     <field name="orig_wkt" labelOnTop="0"/>
+    <field name="Update Codes" labelOnTop="0"/>
   </labelOnTop>
   <reuseLastValue>
     <field reuseLastValue="0" name="Address"/>
@@ -1015,6 +1061,7 @@ def my_form_open(dialog, layer, feature):
     <field reuseLastValue="0" name="fid"/>
     <field reuseLastValue="0" name="inCentroid"/>
     <field reuseLastValue="0" name="orig_wkt"/>
+    <field reuseLastValue="0" name="Update Codes"/>
   </reuseLastValue>
   <dataDefinedFieldProperties/>
   <widgets/>

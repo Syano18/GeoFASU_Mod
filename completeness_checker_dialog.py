@@ -22,6 +22,8 @@ from qgis.core import (
     QgsFillSymbol,
     QgsLineSymbol,
     QgsSingleSymbolRenderer,
+    QgsEditorWidgetSetup,
+    QgsVectorDataProvider,
 )
 
 try:
@@ -494,6 +496,9 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             self.progressBar.setValue(0)
             return
 
+        if sample_layer.isEditable():
+            sample_layer.commitChanges()
+
         self.runButton.setEnabled(False)
         self.progressBar.setValue(10)
         QCoreApplication.processEvents()
@@ -812,6 +817,53 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
         return nos, mun
 
+    def remove_or_hide_fid_column(self, layer):
+        """Hides the fid/ogc_fid column from the attribute table and form, and deletes it if the provider supports it."""
+        if not layer or not layer.isValid():
+            return
+
+        # 1. Hide in Attribute Table Config
+        try:
+            config = layer.attributeTableConfig()
+            cols = config.columns()
+            modified = False
+            for c in cols:
+                if c.name.lower() in ("fid", "ogc_fid"):
+                    if not c.hidden:
+                        c.hidden = True
+                        modified = True
+            if modified:
+                config.setColumns(cols)
+                layer.setAttributeTableConfig(config)
+        except Exception:
+            pass
+
+        # 2. Hide in Field Editor Widgets / Forms
+        try:
+            for idx, field in enumerate(layer.fields()):
+                if field.name().lower() in ("fid", "ogc_fid"):
+                    layer.setEditorWidgetSetup(idx, QgsEditorWidgetSetup("Hidden", {}))
+        except Exception:
+            pass
+
+        # 3. If dataProvider supports deleting attributes (e.g. Memory, Shapefile), remove the field
+        try:
+            caps = layer.dataProvider().capabilities()
+            if caps & QgsVectorDataProvider.DeleteAttributes:
+                indices_to_del = [
+                    idx for idx, f in enumerate(layer.fields())
+                    if f.name().lower() in ("fid", "ogc_fid")
+                ]
+                if indices_to_del:
+                    layer.dataProvider().deleteAttributes(indices_to_del)
+                    layer.updateFields()
+        except Exception:
+            pass
+
+        layer.triggerRepaint()
+        if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+            self.iface.mapCanvas().refresh()
+
     def update_ssu_list(self):
         """
         Merges missing records from Reference SSU into Sample SSU using (BSN, HUSN, HSN),
@@ -857,6 +909,17 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
         self.progressBar.setValue(10)
         QCoreApplication.processEvents()
 
+        if sample_layer.isEditable():
+            sample_layer.commitChanges()
+
+        def normalize_key_part(val):
+            if is_null_or_empty(val):
+                return ""
+            v_int = to_int_or_none(val)
+            if v_int is not None:
+                return str(v_int)
+            return str(val).strip()
+
         try:
             # 0. Ensure Reference SSU layer is filtered based on Sample SSU layer to match the data
             self.filter_reference_layer(sample_layer, ref_layer, log_to_widget=False)
@@ -864,9 +927,9 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             # 1. Collect all keys currently present in Sample SSU
             sample_keys = set()
             for feat in sample_layer.getFeatures():
-                b = str(feat[s_bsn]).strip() if not is_null_or_empty(feat[s_bsn]) else ""
-                hu = str(feat[s_husn]).strip() if not is_null_or_empty(feat[s_husn]) else ""
-                h = str(feat[s_hsn]).strip() if not is_null_or_empty(feat[s_hsn]) else ""
+                b = normalize_key_part(feat[s_bsn])
+                hu = normalize_key_part(feat[s_husn])
+                h = normalize_key_part(feat[s_hsn])
                 if b or hu or h:
                     sample_keys.add((b, hu, h))
 
@@ -890,9 +953,9 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             missing_records_log = []
 
             for r_feat in ref_layer.getFeatures():
-                b = str(r_feat[r_bsn]).strip() if not is_null_or_empty(r_feat[r_bsn]) else ""
-                hu = str(r_feat[r_husn]).strip() if not is_null_or_empty(r_feat[r_husn]) else ""
-                h = str(r_feat[r_hsn]).strip() if not is_null_or_empty(r_feat[r_hsn]) else ""
+                b = normalize_key_part(r_feat[r_bsn])
+                hu = normalize_key_part(r_feat[r_husn])
+                h = normalize_key_part(r_feat[r_hsn])
                 key = (b, hu, h)
 
                 if key not in sample_keys:
@@ -969,6 +1032,21 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 ],
             )
 
+            f_hhhead = find_field_name(
+                sample_layer,
+                "HH_Head",
+                [
+                    "hh_head",
+                    "HH Head",
+                    "hhhead",
+                    "Household_Head",
+                    "Head",
+                    "hh_head_name",
+                    "head_name",
+                    "HH_HEAD",
+                ],
+            )
+
             if not f_sel:
                 self.log("ERROR: 'Selected_SSU' column not found in merged Sample SSU layer.", "ERROR")
                 self.progressBar.setValue(0)
@@ -978,6 +1056,80 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 self.log("ERROR: 'Update Codes' column not found in merged Sample SSU layer.", "ERROR")
                 self.progressBar.setValue(0)
                 return
+
+            # Auto-assign Update Codes for records where Selected_SSU == 1 and Update Codes is Null
+            f_uc_idx = sample_layer.fields().indexOf(f_uc)
+            uc_field = sample_layer.fields().field(f_uc_idx)
+            is_int_field = uc_field.isNumeric()
+            val_9 = 9 if is_int_field else "9"
+            val_6 = 6 if is_int_field else "6"
+
+            target_head_codes = ("VHU", "NUR", "VRH", "VBLDG")
+            updates_dict = {}
+            auto_updated_logs = []
+
+            for feat in sample_layer.getFeatures():
+                raw_sel = feat[f_sel]
+                if is_selected_ssu_1(raw_sel):
+                    raw_uc = feat[f_uc]
+                    if is_null_or_empty(raw_uc):
+                        hh_raw = (
+                            str(feat[f_hhhead]).strip()
+                            if f_hhhead and not is_null_or_empty(feat[f_hhhead])
+                            else ""
+                        )
+                        hh_upper = hh_raw.upper()
+
+                        is_vhu_nur_vrh_vbldg = (
+                            hh_upper in target_head_codes
+                            or any(
+                                hh_upper.startswith(f"{t} ")
+                                or hh_upper.startswith(f"{t}-")
+                                or hh_upper.startswith(f"{t}:")
+                                or hh_upper.startswith(f"{t}(")
+                                for t in target_head_codes
+                            )
+                        )
+
+                        if is_vhu_nur_vrh_vbldg:
+                            code_to_assign = val_9
+                            code_label = "9 (Not a Permanent Resident of the Housing Unit)"
+                        else:
+                            code_to_assign = val_6
+                            code_label = "6 (Household Permanently Move Out)"
+
+                        updates_dict[feat.id()] = {f_uc_idx: code_to_assign}
+                        b = str(feat[s_bsn]).strip() if s_bsn and not is_null_or_empty(feat[s_bsn]) else "-"
+                        hu = str(feat[s_husn]).strip() if s_husn and not is_null_or_empty(feat[s_husn]) else "-"
+                        h = str(feat[s_hsn]).strip() if s_hsn and not is_null_or_empty(feat[s_hsn]) else "-"
+                        auto_updated_logs.append(
+                            f"BSN={b}, HUSN={hu}, HSN={h} (HH_Head='{hh_raw or '-'}') → Assigned Update Code {code_label}"
+                        )
+
+            if updates_dict:
+                success_update = sample_layer.dataProvider().changeAttributeValues(updates_dict)
+                if not success_update:
+                    sample_layer.startEditing()
+                    for f_id, attr_map in updates_dict.items():
+                        for attr_idx, new_val in attr_map.items():
+                            sample_layer.changeAttributeValue(f_id, attr_idx, new_val)
+                    sample_layer.commitChanges()
+                else:
+                    sample_layer.updateFields()
+
+                sample_layer.updateExtents()
+                sample_layer.triggerRepaint()
+                if self.iface and hasattr(self.iface, "mapCanvas") and self.iface.mapCanvas():
+                    self.iface.mapCanvas().refresh()
+
+                self.log(
+                    f"Auto-assigned Update Codes for {len(auto_updated_logs)} record(s) where Selected_SSU = 1 with Null Update Code:",
+                    "INFO"
+                )
+                for item in auto_updated_logs[:10]:
+                    self.log(f"  • {item}", "INFO")
+                if len(auto_updated_logs) > 10:
+                    self.log(f"  • ... and {len(auto_updated_logs) - 10} more records.", "INFO")
 
             layer_errors = []
             selected_1_count = 0
@@ -1103,12 +1255,25 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             out_gpkg_path = os.path.join(target_folder, out_file_name)
             source_path = sample_layer.source().split("|")[0]
 
+            # Remove / hide fid column from the layer view
+            self.remove_or_hide_fid_column(sample_layer)
+
             if os.path.exists(source_path) and os.path.abspath(source_path) == os.path.abspath(out_gpkg_path):
                 self.log(f"GeoPackage updated in-place at:\n  {out_gpkg_path}")
+                try:
+                    out_qml_path = os.path.splitext(out_gpkg_path)[0] + ".qml"
+                    sample_layer.saveNamedStyle(out_qml_path)
+                except Exception:
+                    pass
             else:
                 options = QgsVectorFileWriter.SaveVectorOptions()
                 options.driverName = "GPKG"
                 options.fileEncoding = "UTF-8"
+                # Exclude fid / ogc_fid / layer / path from exported user attributes
+                options.attributes = [
+                    i for i, f in enumerate(sample_layer.fields())
+                    if f.name().lower() not in ("fid", "ogc_fid", "layer", "path")
+                ]
                 if hasattr(QgsVectorFileWriter, "CreateOrOverwriteFile"):
                     options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteFile
                 write_res = QgsVectorFileWriter.writeAsVectorFormatV3(
@@ -1129,6 +1294,11 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 )
                 if res == QgsVectorFileWriter.NoError or res == 0:
                     self.log(f"Exported merged GeoPackage to Validation Output:\n  {out_gpkg_path}", "SUCCESS")
+                    try:
+                        out_qml_path = os.path.splitext(out_gpkg_path)[0] + ".qml"
+                        sample_layer.saveNamedStyle(out_qml_path)
+                    except Exception:
+                        pass
                 else:
                     self.log(f"ERROR: Failed to write GeoPackage file to {out_gpkg_path}: {err_str}", "ERROR")
                     self.progressBar.setValue(0)
@@ -1141,7 +1311,10 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                 self.log(f"• Missing Records Copied: {len(features_to_add)}", "INFO")
             else:
                 self.log("• Missing Records Copied: 0 (All reference records were already present)", "INFO")
+            if len(auto_updated_logs) > 0:
+                self.log(f"• Auto-assigned Update Codes: {len(auto_updated_logs)} (Null Update Code resolution)", "INFO")
             self.log(f"• Saved to: {out_gpkg_path}", "SUCCESS")
+            self.log("• FID column removed/hidden from attribute view.", "INFO")
             self.progressBar.setValue(0)
 
         except Exception as e:

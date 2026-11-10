@@ -3,6 +3,7 @@
 # Refactored for robustness, modern UI and responsive progress.
 
 import os
+import re
 import shutil
 import pandas as pd
 
@@ -161,6 +162,19 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
             self.log("No rows with valid WKT geometry were found after cleaning.", "WARNING")
             return None
 
+        # Standardize or add 'Update Codes' column to match Sample SSU schema
+        uc_col = None
+        for col in df.columns:
+            norm_c = re.sub(r"[\s_]+", "", str(col)).lower()
+            if norm_c in ("updatecodes", "updatecode", "updatescodes", "updatescode", "uc"):
+                uc_col = col
+                break
+
+        if uc_col and uc_col != "Update Codes":
+            df = df.rename(columns={uc_col: "Update Codes"})
+        elif not uc_col:
+            df["Update Codes"] = None
+
         df = df.fillna("")
         return df
 
@@ -216,7 +230,38 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
                 features = []
                 for _, row in group_rep.iterrows():
                     feat = QgsFeature()
-                    feat.setAttributes([row[col] for col in attr_cols])
+                    attrs = []
+                    for col in attr_cols:
+                        val = row[col]
+                        norm_col = re.sub(r"[\s_]+", "", str(col)).lower()
+                        if norm_col == "remarks":
+                            # If remarks has no content, make it NULL to be consistent with Sample SSU
+                            if (
+                                pd.isna(val)
+                                or str(val).strip() == ""
+                                or str(val).lower() in ("none", "nan", "null")
+                            ):
+                                attrs.append(None)
+                            else:
+                                attrs.append(str(val).strip())
+                        elif norm_col in ("updatecodes", "updatecode", "updatescodes", "uc"):
+                            raw_str = "" if pd.isna(val) else str(val).strip()
+                            if raw_str == "" or raw_str.lower() in ("none", "nan", "null"):
+                                # Copy the code used on Sample SSU ('0' for Sample SSU, None for Replacement SSU)
+                                sel_val = str(row.get("Selected_SSU", "")).strip()
+                                if sel_val == "1" or sel_val.startswith("1"):
+                                    attrs.append("0")
+                                else:
+                                    attrs.append(None)
+                            else:
+                                attrs.append(raw_str)
+                        else:
+                            if pd.isna(val) or str(val).lower() in ("none", "nan"):
+                                attrs.append("")
+                            else:
+                                attrs.append(str(val))
+
+                    feat.setAttributes(attrs)
                     geom = QgsGeometry.fromWkt(row["WKT"])
                     
                     if geom and geom.isGeosValid():
