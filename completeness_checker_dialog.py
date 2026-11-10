@@ -1535,14 +1535,46 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             target_folder = os.path.join(base_out_dir, val_folder_name, nos, mun)
             os.makedirs(target_folder, exist_ok=True)
 
-            layer_name = sample_layer.name()
-            out_file_name = (
-                f"{layer_name}.gpkg"
-                if not layer_name.lower().endswith(".gpkg")
-                else layer_name
-            )
-            out_gpkg_path = os.path.join(target_folder, out_file_name)
+            # Resolve output GeoPackage filename:
+            # When a replicate is split into multiple PSUs, preserving the PSU Name in the filename
+            # ensures that different PSUs in the same replicate (e.g. R30_Bulanao and R30_Calaccad)
+            # do not overwrite each other in Validation Output.
             source_path = sample_layer.source().split("|")[0]
+            source_file = os.path.basename(source_path) if source_path else ""
+
+            # Check for PSU Name from layer features
+            f_psu_out = find_field_name(
+                sample_layer,
+                "PSU_Name",
+                ["psu_name", "PSU", "psu", "PSU Name", "PSU_name"],
+            )
+            psus_in_layer = set()
+            if f_psu_out:
+                for feat in sample_layer.getFeatures():
+                    pv = feat[f_psu_out]
+                    if not is_null_or_empty(pv):
+                        psus_in_layer.add(str(pv).strip())
+
+            # Check if source file already has the full detailed name (e.g. from Tablet package)
+            if (
+                source_file
+                and source_file.lower().endswith(".gpkg")
+                and "selected" in source_file.lower()
+                and source_file.lower() not in ("selected.gpkg", "selected ssu_ref.gpkg")
+            ):
+                out_file_name = source_file
+            else:
+                layer_name = sample_layer.name()
+                base_name = layer_name[:-5] if layer_name.lower().endswith(".gpkg") else layer_name
+                # If there's a single PSU and its name isn't already in base_name, append it
+                if len(psus_in_layer) == 1:
+                    single_psu = next(iter(psus_in_layer))
+                    clean_psu = re.sub(r'[\\/*?:"<>|]', "", single_psu).strip()
+                    if clean_psu.lower() not in base_name.lower():
+                        base_name = f"{base_name}_{clean_psu}"
+                out_file_name = f"{base_name}.gpkg"
+
+            out_gpkg_path = os.path.join(target_folder, out_file_name)
 
             if os.path.exists(source_path) and os.path.abspath(source_path) == os.path.abspath(out_gpkg_path):
                 self.reorder_fid_to_first_column(sample_layer)
@@ -1579,7 +1611,9 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                     self.log(f"Exported merged GeoPackage to Validation Output:\n  {out_gpkg_path}", "SUCCESS")
                     # Repoint active sample_layer to the newly exported GeoPackage with sequential FIDs
                     try:
-                        sample_layer.setDataSource(out_gpkg_path, sample_layer.name(), "ogr")
+                        base_layer_title = os.path.splitext(out_file_name)[0]
+                        sample_layer.setDataSource(out_gpkg_path, base_layer_title, "ogr")
+                        sample_layer.setName(base_layer_title)
                     except Exception:
                         pass
                     # Reorder fid to first column and make it visible
