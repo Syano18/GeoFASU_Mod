@@ -877,9 +877,12 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             features_to_add = []
             sample_fields = sample_layer.fields()
 
-            # Map sample field name -> ref field name
+            # Map sample field name -> ref field name (exclude primary key 'fid' / 'ogc_fid'
+            # to let SQLite/GeoPackage auto-generate a new unique FID upon insertion)
             field_map = {}
             for sf in sample_fields:
+                if sf.name().lower() in ("fid", "ogc_fid"):
+                    continue
                 rf = find_field_name(ref_layer, sf.name())
                 if rf:
                     field_map[sf.name()] = rf
@@ -911,7 +914,12 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             if features_to_add:
                 success = sample_layer.dataProvider().addFeatures(features_to_add)
                 if not success:
-                    self.log("ERROR: Failed to insert features into Sample SSU layer (dataProvider returned False).", "ERROR")
+                    err_msg = ""
+                    if hasattr(sample_layer.dataProvider(), "errors"):
+                        errs = sample_layer.dataProvider().errors()
+                        if errs:
+                            err_msg = f" Details: {', '.join(errs)}"
+                    self.log(f"ERROR: Failed to insert features into Sample SSU layer.{err_msg}", "ERROR")
                     self.progressBar.setValue(0)
                     return
 
