@@ -1547,11 +1547,6 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
             if os.path.exists(source_path) and os.path.abspath(source_path) == os.path.abspath(out_gpkg_path):
                 self.reorder_fid_to_first_column(sample_layer)
                 self.log(f"GeoPackage updated in-place at:\n  {out_gpkg_path}")
-                try:
-                    out_qml_path = os.path.splitext(out_gpkg_path)[0] + ".qml"
-                    sample_layer.saveNamedStyle(out_qml_path)
-                except Exception:
-                    pass
             else:
                 options = QgsVectorFileWriter.SaveVectorOptions()
                 options.driverName = "GPKG"
@@ -1589,15 +1584,18 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
                         pass
                     # Reorder fid to first column and make it visible
                     self.reorder_fid_to_first_column(sample_layer)
-                    try:
-                        out_qml_path = os.path.splitext(out_gpkg_path)[0] + ".qml"
-                        sample_layer.saveNamedStyle(out_qml_path)
-                    except Exception:
-                        pass
                 else:
                     self.log(f"ERROR: Failed to write GeoPackage file to {out_gpkg_path}: {err_str}", "ERROR")
                     self.progressBar.setValue(0)
                     return
+
+            # Ensure no residual .qml file is left in the Validation folder
+            residual_qml = os.path.splitext(out_gpkg_path)[0] + ".qml"
+            if os.path.exists(residual_qml):
+                try:
+                    os.remove(residual_qml)
+                except Exception:
+                    pass
 
             self.progressBar.setValue(100)
             self.log("Update SSU List completed successfully! ✓", "SUCCESS")
