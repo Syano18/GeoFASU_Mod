@@ -118,10 +118,13 @@ class GeoFASU:
 
             # Cross-dialog directory sync
             def sync_dir():
-                if self.post_dlg and hasattr(self.post_dlg, 'tab_gpkg_excel'):
+                if self.post_dlg:
                     p = self.pre_dlg.tab_loader.fileWidget.filePath()
                     if p:
-                        self.post_dlg.tab_gpkg_excel.fileWidget.setFilePath(p)
+                        if hasattr(self.post_dlg, 'tab_loader'):
+                            self.post_dlg.tab_loader.fileWidget.setFilePath(p)
+                        if hasattr(self.post_dlg, 'tab_gpkg_excel'):
+                            self.post_dlg.tab_gpkg_excel.fileWidget.setFilePath(p)
 
             self.pre_dlg.tab_loader.fileWidget.fileChanged.connect(sync_dir)
 
@@ -138,7 +141,10 @@ class GeoFASU:
             if self.pre_dlg:
                 p = self.pre_dlg.tab_loader.fileWidget.filePath()
                 if p:
-                    self.post_dlg.tab_gpkg_excel.fileWidget.setFilePath(p)
+                    if hasattr(self.post_dlg, 'tab_loader'):
+                        self.post_dlg.tab_loader.fileWidget.setFilePath(p)
+                    if hasattr(self.post_dlg, 'tab_gpkg_excel'):
+                        self.post_dlg.tab_gpkg_excel.fileWidget.setFilePath(p)
 
         self.post_dlg.set_active_tab(tab_index)
         self.post_dlg.show()
@@ -150,7 +156,7 @@ class GeoFASU:
         if target in (0, 1, 'converter', 'loader'):
             self.run_preprocessing(target if isinstance(target, int) else (0 if target == 'converter' else 1))
         else:
-            self.run_postprocessing(0 if target in (2, 'checker') else 1)
+            self.run_postprocessing(1 if target in (2, 'checker') else 3)
 
     def run_converter(self):
         self.run_preprocessing(0)
@@ -162,7 +168,7 @@ class GeoFASU:
         self.run_preprocessing(1)
 
     def run_checker(self):
-        self.run_postprocessing(0)
+        self.run_postprocessing(1)
 
     def run_gpkg_to_excel(self):
-        self.run_postprocessing(1)
+        self.run_postprocessing(3)

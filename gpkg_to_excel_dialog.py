@@ -9,7 +9,7 @@ from collections import defaultdict
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import QgsVectorLayer, QgsProviderRegistry
+from qgis.core import QgsVectorLayer, QgsProviderRegistry, QgsField
 import processing
 
 try:
@@ -273,7 +273,29 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                     'OUTPUT': 'memory:merged_temp'
                 }
                 temp_merged = processing.run("native:mergevectorlayers", params)['OUTPUT']
-                
+
+                # Ensure 'WKT' column exists and populate it with the current point coordinates
+                wkt_idx = temp_merged.fields().indexOf("WKT")
+                if wkt_idx == -1:
+                    try:
+                        from qgis.PyQt.QtCore import QMetaType
+                        wkt_field = QgsField("WKT", QMetaType.Type.QString)
+                    except Exception:
+                        from qgis.PyQt.QtCore import QVariant
+                        wkt_field = QgsField("WKT", QVariant.String)
+                    temp_merged.dataProvider().addAttributes([wkt_field])
+                    temp_merged.updateFields()
+                    wkt_idx = temp_merged.fields().indexOf("WKT")
+
+                if wkt_idx != -1:
+                    wkt_updates = {}
+                    for feat in temp_merged.getFeatures():
+                        geom = feat.geometry()
+                        wkt_val = geom.asWkt() if (geom and not geom.isNull()) else ""
+                        wkt_updates[feat.id()] = {wkt_idx: wkt_val}
+                    if wkt_updates:
+                        temp_merged.dataProvider().changeAttributeValues(wkt_updates)
+
                 self.progressBar.setValue(base_prog + int(50 / total_reps))
                 QCoreApplication.processEvents()
 

@@ -14,6 +14,7 @@ try:
     from .style import apply_modern_style, setup_dialog_logo
     from .GeoFASU_dialog import GeoFASUDialog
     from .loader_dialog import LoaderDialog
+    from .post_loader_dialog import PostLoaderDialog
     from .checker_dialog import CheckerDialog
     from .completeness_checker_dialog import CompletenessCheckerDialog
     from .gpkg_to_excel_dialog import GpkgToExcelDialog
@@ -22,6 +23,7 @@ except (ImportError, ValueError):
     from style import apply_modern_style, setup_dialog_logo
     from GeoFASU_dialog import GeoFASUDialog
     from loader_dialog import LoaderDialog
+    from post_loader_dialog import PostLoaderDialog
     from checker_dialog import CheckerDialog
     from completeness_checker_dialog import CompletenessCheckerDialog
     from gpkg_to_excel_dialog import GpkgToExcelDialog
@@ -218,16 +220,19 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
             self.btn_open_folder.setIcon(QIcon(str(folder_icon)))
 
         # Modules
+        self.tab_loader = PostLoaderDialog(iface=self.iface, parent=self)
         self.tab_checker = CheckerDialog(iface=self.iface, parent=self)
         self.tab_completeness = CompletenessCheckerDialog(iface=self.iface, parent=self)
         self.tab_gpkg_excel = GpkgToExcelDialog(parent=self)
 
         # Gatekeeping Quality Checker -> Completeness Checker
         self.last_passed_layer_id = None
+        self.tab_loader.project_loaded.connect(self.on_loader_project_loaded)
         self.tab_checker.quality_check_passed.connect(self.on_quality_check_passed)
         self.tab_checker.quality_check_failed.connect(self.on_quality_check_failed)
 
         self.tabs = [
+            (self.tab_loader, "Loader", "loader.png"),
             (self.tab_checker, "Quality Checker", "checker.png"),
             (self.tab_completeness, "Completeness Checker", "completeness.png"),
             (self.tab_gpkg_excel, "GPKG to Excel", "gpkg_to_excel.png"),
@@ -240,6 +245,14 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
             self.tabWidget.addTab(_make_scroll(widget), icon, title)
 
         self.tabWidget.currentChanged.connect(self.on_tab_changed)
+
+    def on_loader_project_loaded(self):
+        """Called when Postprocessing Loader loads a project or layers."""
+        self.on_quality_check_failed()
+        if hasattr(self, 'tab_checker') and hasattr(self.tab_checker, 'populate_layers'):
+            self.tab_checker.populate_layers()
+        if hasattr(self, 'tab_completeness') and hasattr(self.tab_completeness, 'populate_layers'):
+            self.tab_completeness.populate_layers()
 
     def on_quality_check_passed(self, layer_id: str):
         """Called when Quality Checker passes with 0 errors."""
@@ -261,12 +274,16 @@ class PostprocessingDialog(QDialog, FORM_CLASS):
             elif hasattr(widget, 'logsTextEdit') and widget.logsTextEdit:
                 widget.logsTextEdit.clear()
 
-        if index == 1 and hasattr(self, 'tab_completeness'):
+        if not (0 <= index < len(self.tabs)):
+            return
+
+        current_widget = self.tabs[index][0]
+        if current_widget is self.tab_completeness:
             if self.last_passed_layer_id:
                 self.tab_completeness.set_quality_check_state(True, self.last_passed_layer_id)
             else:
                 self.tab_completeness.set_quality_check_state(False)
-        elif index == 2 and hasattr(self, 'tab_gpkg_excel'):
+        elif current_widget is self.tab_gpkg_excel:
             self.tab_gpkg_excel.check_buttons_state()
 
     def open_default_folder(self):
