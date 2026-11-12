@@ -13,9 +13,9 @@ from qgis.core import QgsVectorLayer, QgsProviderRegistry, QgsField
 import processing
 
 try:
-    from .style import apply_modern_style, setup_dialog_logo
+    from .style import apply_modern_style, setup_dialog_logo, append_log_message
 except (ImportError, ValueError):
-    from style import apply_modern_style, setup_dialog_logo
+    from style import apply_modern_style, setup_dialog_logo, append_log_message
 
 FORM_CLASS, _ = uic.loadUiType(
     os.path.join(os.path.dirname(__file__), "gpkg_to_excel_dialog.ui")
@@ -100,17 +100,8 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
 
     def log(self, message: str, level: str = "INFO"):
         """Appends a line of text to the logs widget with level indicator."""
-        prefix = {
-            "INFO": "",
-            "SUCCESS": "✓ ",
-            "WARNING": "⚠ ",
-            "ERROR": "✗ ",
-        }.get(level.upper(), "")
         if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
-            self.logsTextEdit.appendPlainText(f"{prefix}{message}")
-            self.logsTextEdit.verticalScrollBar().setValue(
-                self.logsTextEdit.verticalScrollBar().maximum()
-            )
+            append_log_message(self.logsTextEdit, message, level)
 
     def populate_nos_list(self):
         self.comboxNOS.blockSignals(True)

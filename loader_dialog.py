@@ -31,9 +31,9 @@ from qgis.PyQt.QtWidgets import (
 from qgis.utils import iface
 
 try:
-    from .style import apply_modern_style, setup_dialog_logo
+    from .style import apply_modern_style, setup_dialog_logo, append_log_message
 except (ImportError, ValueError):
-    from style import apply_modern_style, setup_dialog_logo
+    from style import apply_modern_style, setup_dialog_logo, append_log_message
 
 # QFieldSync (supports embedded and external plugin installation)
 plugin_dir = os.path.dirname(__file__)
@@ -107,17 +107,8 @@ class LoaderDialog(QDialog, FORM_CLASS):
 
     def log(self, message: str, level: str = "INFO"):
         """Appends a line of text to the logs widget with level indicator."""
-        prefix = {
-            "INFO": "",
-            "SUCCESS": "✓ ",
-            "WARNING": "⚠ ",
-            "ERROR": "✗ ",
-        }.get(level.upper(), "")
         if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
-            self.logsTextEdit.appendPlainText(f"{prefix}{message}")
-            self.logsTextEdit.verticalScrollBar().setValue(
-                self.logsTextEdit.verticalScrollBar().maximum()
-            )
+            append_log_message(self.logsTextEdit, message, level)
 
     def show_error(self, message: str):
         self.load_successful = False

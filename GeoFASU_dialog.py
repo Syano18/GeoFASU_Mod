@@ -22,9 +22,9 @@ from qgis.core import (
 )
 from qgis.gui import QgsFileWidget
 try:
-    from .style import apply_modern_style, setup_dialog_logo
+    from .style import apply_modern_style, setup_dialog_logo, append_log_message
 except (ImportError, ValueError):
-    from style import apply_modern_style, setup_dialog_logo
+    from style import apply_modern_style, setup_dialog_logo, append_log_message
 
 # Load the UI class from the .ui file
 FORM_CLASS, _ = uic.loadUiType(
@@ -50,17 +50,8 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
 
     def log(self, message: str, level: str = "INFO"):
         """Appends a line of text to the logs widget with level indicator."""
-        prefix = {
-            "INFO": "",
-            "SUCCESS": "✓ ",
-            "WARNING": "⚠ ",
-            "ERROR": "✗ ",
-        }.get(level.upper(), "")
         if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
-            self.logsTextEdit.appendPlainText(f"{prefix}{message}")
-            self.logsTextEdit.verticalScrollBar().setValue(
-                self.logsTextEdit.verticalScrollBar().maximum()
-            )
+            append_log_message(self.logsTextEdit, message, level)
 
     def run_process(self):
         """Main function to execute the entire process when the 'Run' button is clicked."""

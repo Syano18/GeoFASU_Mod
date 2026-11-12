@@ -4,7 +4,7 @@
 
 import os
 from qgis.PyQt.QtCore import Qt
-from qgis.PyQt.QtGui import QPixmap
+from qgis.PyQt.QtGui import QPixmap, QColor, QFont, QTextCharFormat, QTextCursor
 from qgis.PyQt.QtWidgets import QComboBox, QListView
 
 MODERN_STYLE = """
@@ -344,5 +344,52 @@ def setup_dialog_logo(dialog, max_width=250, max_height=130):
                 dialog.iconLabel.setMinimumHeight(target_height)
                 dialog.iconLabel.setMaximumHeight(target_height)
                 dialog.iconLabel.setFixedHeight(target_height)
+
+
+def append_log_message(logs_widget, message: str, level: str = "INFO"):
+    """Appends a formatted message to logsTextEdit, enlarging and coloring STATUS lines."""
+    if not logs_widget:
+        return
+
+    lvl = (level or "INFO").upper()
+    prefix = {
+        "INFO": "",
+        "SUCCESS": "✓ ",
+        "WARNING": "⚠ ",
+        "ERROR": "✗ ",
+    }.get(lvl, "")
+    text = f"{prefix}{message}"
+    is_status = (message or "").lstrip().upper().startswith("STATUS:")
+
+    status_colors = {
+        "SUCCESS": "#4ADE80",  # Bright green
+        "ERROR": "#F87171",    # Bright red
+        "WARNING": "#FBBF24",  # Bright amber
+        "INFO": "#38BDF8",     # Bright sky blue
+    }
+    line_colors = {
+        "SUCCESS": "#86EFAC",
+        "ERROR": "#FCA5A5",
+        "WARNING": "#FDE047",
+        "INFO": "#E2E8F0",
+    }
+
+    fmt = QTextCharFormat()
+    if is_status:
+        fmt.setForeground(QColor(status_colors.get(lvl, "#38BDF8")))
+        fmt.setFontWeight(QFont.Bold)
+        fmt.setFontPointSize(13)
+    else:
+        fmt.setForeground(QColor(line_colors.get(lvl, "#E2E8F0")))
+        fmt.setFontWeight(QFont.DemiBold if lvl in ("SUCCESS", "ERROR", "WARNING") else QFont.Normal)
+        fmt.setFontPointSize(8.5)
+
+    cursor = logs_widget.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    if not logs_widget.document().isEmpty():
+        cursor.insertBlock()
+    cursor.insertText(text, fmt)
+    logs_widget.setTextCursor(cursor)
+    logs_widget.verticalScrollBar().setValue(logs_widget.verticalScrollBar().maximum())
 
 

@@ -27,9 +27,9 @@ from qgis.core import (
 )
 
 try:
-    from .style import apply_modern_style, setup_dialog_logo
+    from .style import apply_modern_style, setup_dialog_logo, append_log_message
 except (ImportError, ValueError):
-    from style import apply_modern_style, setup_dialog_logo
+    from style import apply_modern_style, setup_dialog_logo, append_log_message
 
 FORM_CLASS, _ = uic.loadUiType(
     os.path.join(os.path.dirname(__file__), "completeness_checker_dialog.ui")
@@ -310,16 +310,8 @@ class CompletenessCheckerDialog(QDialog, FORM_CLASS):
 
     def log(self, message: str, level: str = "INFO"):
         """Appends a line of text to the logs widget with level indicator."""
-        prefix = {
-            "INFO": "",
-            "SUCCESS": "✓ ",
-            "WARNING": "⚠ ",
-            "ERROR": "✗ ",
-        }.get(level.upper(), "")
-        self.logsTextEdit.appendPlainText(f"{prefix}{message}")
-        self.logsTextEdit.verticalScrollBar().setValue(
-            self.logsTextEdit.verticalScrollBar().maximum()
-        )
+        if hasattr(self, 'logsTextEdit') and self.logsTextEdit:
+            append_log_message(self.logsTextEdit, message, level)
 
     def populate_layers(self, reset_selection=False):
         """Populates Sample SSU and Reference SSU dropdowns from vector layers in QGIS."""

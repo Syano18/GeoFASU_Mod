@@ -10,9 +10,9 @@ from qgis.PyQt.QtWidgets import QDialog
 from qgis.core import QgsProject, QgsVectorLayer, QgsProviderRegistry
 
 try:
-    from .style import apply_modern_style, setup_dialog_logo
+    from .style import apply_modern_style, setup_dialog_logo, append_log_message
 except (ImportError, ValueError):
-    from style import apply_modern_style, setup_dialog_logo
+    from style import apply_modern_style, setup_dialog_logo, append_log_message
 
 FORM_CLASS, _ = uic.loadUiType(
     os.path.join(os.path.dirname(__file__), "post_loader_dialog.ui")
@@ -68,17 +68,8 @@ class PostLoaderDialog(QDialog, FORM_CLASS):
 
     def log(self, message: str, level: str = "INFO"):
         """Appends a line of text to the logs widget with level indicator."""
-        prefix = {
-            "INFO": "",
-            "SUCCESS": "✓ ",
-            "WARNING": "⚠ ",
-            "ERROR": "✗ ",
-        }.get(level.upper(), "")
         if hasattr(self, "logsTextEdit") and self.logsTextEdit:
-            self.logsTextEdit.appendPlainText(f"{prefix}{message}")
-            self.logsTextEdit.verticalScrollBar().setValue(
-                self.logsTextEdit.verticalScrollBar().maximum()
-            )
+            append_log_message(self.logsTextEdit, message, level)
 
     def _from_tablet_dir(self) -> str:
         base_dir = self.fileWidget.filePath().strip() if hasattr(self, "fileWidget") else ""
