@@ -239,8 +239,8 @@ class CheckerDialog(QDialog, FORM_CLASS):
         self.populate_layers()
 
         # Keep dropdowns in sync if project layers change
-        QgsProject.instance().layersAdded.connect(self.populate_layers)
-        QgsProject.instance().layersRemoved.connect(self.populate_layers)
+        QgsProject.instance().layersAdded.connect(lambda *_: self.populate_layers())
+        QgsProject.instance().layersRemoved.connect(lambda *_: self.populate_layers())
 
         # Signal connections
         self.runButton.clicked.connect(self.run_checker)
@@ -258,7 +258,17 @@ class CheckerDialog(QDialog, FORM_CLASS):
             from qgis.PyQt.QtCore import QUrl
             QDesktopServices.openUrl(QUrl.fromLocalFile(default_dir))
 
+    def update_run_button_state(self):
+        """Enables Run Checker only when a valid layer is loaded and selected."""
+        has_valid_layer = False
+        if self.comboxSample.count() > 0:
+            layer_id = self.comboxSample.currentData()
+            layer = QgsProject.instance().mapLayer(layer_id) if layer_id else None
+            has_valid_layer = bool(layer and isinstance(layer, QgsVectorLayer) and layer.isValid())
+        self.runButton.setEnabled(has_valid_layer)
+
     def on_sample_changed(self):
+        self.update_run_button_state()
         self.quality_check_failed.emit()
 
     def showEvent(self, event):
@@ -283,6 +293,7 @@ class CheckerDialog(QDialog, FORM_CLASS):
         if not vector_layers:
             self.comboxSample.setPlaceholderText("-- No Vector Layers in Project --")
             self.comboxSample.blockSignals(False)
+            self.update_run_button_state()
             return
 
         self.comboxSample.setPlaceholderText("-- Select Sample SSU Layer --")
@@ -329,6 +340,7 @@ class CheckerDialog(QDialog, FORM_CLASS):
             self.comboxSample.setCurrentIndex(sample_match_idx)
 
         self.comboxSample.blockSignals(False)
+        self.update_run_button_state()
 
     def log(self, message: str, level: str = "INFO"):
         """Appends a line of text to the logs widget with level indicator."""
@@ -758,7 +770,7 @@ class CheckerDialog(QDialog, FORM_CLASS):
             self.quality_check_failed.emit()
             self.progressBar.setValue(0)
         finally:
-            self.runButton.setEnabled(True)
+            self.update_run_button_state()
             self.progressBar.setValue(0)
 
     def clear_logs(self):
@@ -771,7 +783,6 @@ class CheckerDialog(QDialog, FORM_CLASS):
     def reset_fields(self):
         """Resets the input fields and progress bar to default values."""
         self.progressBar.setValue(0)
-        self.runButton.setEnabled(True)
         self.populate_layers(reset_selection=True)
         self.clear_logs()
         self.quality_check_failed.emit()
