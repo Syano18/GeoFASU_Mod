@@ -17,5 +17,21 @@ for k in list(sys.modules.keys()):
         del sys.modules[k]
 
 def classFactory(iface):
+    # Purge cached plugin submodules so Plugin Reloader loads fresh code immediately
+    for k in list(sys.modules.keys()):
+        if any(k.startswith(p) for p in (
+            'GeoFASU',
+            'checker_dialog',
+            'completeness_checker_dialog',
+            'gpkg_to_excel_dialog',
+            'loader_dialog',
+            'post_loader_dialog',
+            'folder_creator_dialog',
+            'main_dialog',
+            'updater',
+            'style'
+        )):
+            del sys.modules[k]
+
     from .GeoFASU import GeoFASU
     return GeoFASU(iface)

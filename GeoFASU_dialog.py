@@ -268,7 +268,11 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
                                 else:
                                     attrs.append(None)
                             else:
-                                attrs.append(raw_str)
+                                m = re.match(r"^([0-9])\b", raw_str)
+                                if m and int(m.group(1)) in (0, 1, 2, 3, 4, 5, 6, 8, 9):
+                                    attrs.append(m.group(1))
+                                else:
+                                    attrs.append(raw_str)
                         else:
                             if pd.isna(val) or str(val).lower() in ("none", "nan"):
                                 attrs.append("")

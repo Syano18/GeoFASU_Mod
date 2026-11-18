@@ -745,13 +745,13 @@
           <Option type="Map">
             <Option name="map" type="List">
               <Option type="Map">
-                <Option value="1" name="1 - Sample SSU" type="QString"/>
+                <Option value="1" name="1" type="QString"/>
               </Option>
               <Option type="Map">
-                <Option value="2" name="2 - Replacement SSU" type="QString"/>
+                <Option value="2" name="2" type="QString"/>
               </Option>
               <Option type="Map">
-                <Option value="3" name="3 - Additional Replacement SSU" type="QString"/>
+                <Option value="3" name="3" type="QString"/>
               </Option>
             </Option>
           </Option>

@@ -35,6 +35,80 @@ def list_subfolders(folder_path: str):
         return []
 
 
+def sanitize_layer_attributes(layer):
+    """Ensures Selected_SSU and Update Codes values in the layer are strictly numeric."""
+    if not layer or not layer.isValid():
+        return
+    f_sel = None
+    f_uc = None
+    for f in layer.fields():
+        low = f.name().lower()
+        if low in ("selected_ssu", "selected ssu", "selectedssu"):
+            f_sel = f.name()
+        elif low in ("update codes", "update_codes", "uc", "update code"):
+            f_uc = f.name()
+    if not f_sel and not f_uc:
+        return
+
+    sel_idx = layer.fields().indexOf(f_sel) if f_sel else -1
+    uc_idx = layer.fields().indexOf(f_uc) if f_uc else -1
+    is_int_sel = layer.fields().field(sel_idx).isNumeric() if sel_idx >= 0 else False
+    is_int_uc = layer.fields().field(uc_idx).isNumeric() if uc_idx >= 0 else False
+
+    updates = {}
+    for feat in layer.getFeatures():
+        f_updates = {}
+        if sel_idx >= 0:
+            raw = feat[sel_idx]
+            if raw is not None and not (hasattr(raw, "isNull") and raw.isNull()):
+                s = str(raw).strip()
+                if any(c.isalpha() for c in s):
+                    m = re.match(r"^([1-3])\b", s)
+                    if m:
+                        val = int(m.group(1)) if is_int_sel else m.group(1)
+                    elif "sample" in s.lower() and "replacement" not in s.lower():
+                        val = 1 if is_int_sel else "1"
+                    elif "replacement" in s.lower() and "additional" not in s.lower():
+                        val = 2 if is_int_sel else "2"
+                    elif "additional" in s.lower():
+                        val = 3 if is_int_sel else "3"
+                    else:
+                        val = None
+                    if val is not None and str(val) != s:
+                        f_updates[sel_idx] = val
+
+        if uc_idx >= 0:
+            raw = feat[uc_idx]
+            if raw is not None and not (hasattr(raw, "isNull") and raw.isNull()):
+                s = str(raw).strip()
+                if any(c.isalpha() for c in s):
+                    m = re.match(r"^([0-9])\b", s)
+                    if m and int(m.group(1)) in (0, 1, 2, 3, 4, 5, 6, 8, 9):
+                        val = int(m.group(1)) if is_int_uc else m.group(1)
+                    else:
+                        val = None
+                    if val is not None and str(val) != s:
+                        f_updates[uc_idx] = val
+
+        if f_updates:
+            updates[feat.id()] = f_updates
+
+    if updates:
+        try:
+            if layer.isEditable():
+                layer.commitChanges()
+            layer.startEditing()
+            for fid, attrs in updates.items():
+                for aidx, aval in attrs.items():
+                    layer.changeAttributeValue(fid, aidx, aval)
+            layer.commitChanges()
+            layer.dataProvider().changeAttributeValues(updates)
+            layer.updateFields()
+        except Exception:
+            pass
+
+
+
 class PostLoaderDialog(QDialog, FORM_CLASS):
     """Postprocessing Loader tab for browsing and loading From Tablet folders."""
 
@@ -218,6 +292,7 @@ class PostLoaderDialog(QDialog, FORM_CLASS):
                     )
                     lyr = QgsVectorLayer(sub.uri(), display_name, "ogr")
                     if lyr.isValid():
+                        sanitize_layer_attributes(lyr)
                         project.addMapLayer(lyr)
                         loaded_layers.append(lyr)
                         self.log(f"Loaded layer: {display_name}", "INFO")

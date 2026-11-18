@@ -52,6 +52,7 @@ TARGET_COLUMNS = [
     "Selected_SSU",
     "N_HHEAD",
     "N_ADDRESS",
+    "N_UCODE",
     "N_REMARKS",
     "N_HUSN",
     "N_HSN",
@@ -63,6 +64,7 @@ def find_source_field(fields, target_col):
     aliases = {
         "N_HHEAD": ["n_hhead", "n_hhhead", "n_head", "n_household_head"],
         "N_ADDRESS": ["n_address", "n_addr"],
+        "N_UCODE": ["Update Codes", "Update_Codes", "Updates Codes", "update codes", "update_code", "UC", "uc", "n_ucode", "n_uc"],
         "N_REMARKS": ["n_remarks", "n_rem"],
         "N_HUSN": ["n_husn"],
         "N_HSN": ["n_hsn"],
@@ -95,6 +97,91 @@ def find_source_field(fields, target_col):
         if re.sub(r"[\s_]+", "", f.name()).lower() == norm_target:
             return f.name()
     return None
+
+
+def format_wkt_point(wkt) -> str:
+    """Formats WKT to ensure 'POINT' keyword is in ALL CAPS."""
+    if not wkt:
+        return ""
+    s = str(wkt).strip()
+    return re.sub(r"^point\b", "POINT", s, flags=re.IGNORECASE)
+
+
+def standardize_selected_ssu(val) -> str:
+    """Standardizes Selected_SSU values to numeric string ('1', '2', '3')."""
+    if val is None:
+        return ""
+    if hasattr(val, "isNull") and val.isNull():
+        return ""
+    if type(val).__name__ == "QPyNullVariant":
+        return ""
+    s = str(val).strip()
+    if s == "" or s.upper() in ["NULL", "NONE", "NAN"]:
+        return ""
+    try:
+        f = float(s)
+        if f.is_integer():
+            v_int = int(f)
+            if v_int in (1, 2, 3):
+                return str(v_int)
+    except (ValueError, TypeError):
+        pass
+    m = re.match(r"^([1-3])\b", s)
+    if m:
+        return m.group(1)
+    s_lower = s.lower()
+    if "sample" in s_lower and "replacement" not in s_lower and "additional" not in s_lower:
+        return "1"
+    elif "replacement" in s_lower and "additional" not in s_lower:
+        return "2"
+    elif "additional" in s_lower:
+        return "3"
+    return s
+
+
+def standardize_update_code(val) -> str:
+    """Standardizes Update Codes value to single digit code ('0'..'9')."""
+    if val is None:
+        return ""
+    if hasattr(val, "isNull") and val.isNull():
+        return ""
+    if type(val).__name__ == "QPyNullVariant":
+        return ""
+    s = str(val).strip()
+    if s == "" or s.upper() in ["NULL", "NONE", "NAN"]:
+        return ""
+    try:
+        f = float(s)
+        if f.is_integer():
+            v_int = int(f)
+            if v_int in (0, 1, 2, 3, 4, 5, 6, 8, 9):
+                return str(v_int)
+    except (ValueError, TypeError):
+        pass
+    m = re.match(r"^([0-9])\b", s)
+    if m:
+        digit = int(m.group(1))
+        if digit in (0, 1, 2, 3, 4, 5, 6, 8, 9):
+            return str(digit)
+    s_lower = s.lower()
+    desc_map = {
+        "no change": "0",
+        "change of household head": "1",
+        "correction of name": "2",
+        "correction of address": "2",
+        "additional household": "3",
+        "merged with another household": "4",
+        "new occupant": "5",
+        "household permanently move out": "6",
+        "permanently move out": "6",
+        "no longer used as a dwelling unit": "8",
+        "not a permanent resident": "9",
+    }
+    for desc_key, code_str in desc_map.items():
+        if desc_key in s_lower:
+            return code_str
+    return s
+
 
 class GpkgToExcelDialog(QDialog, FORM_CLASS):
     def __init__(self, parent=None):
@@ -373,11 +460,18 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                     for col in TARGET_COLUMNS:
                         if col == "WKT":
                             geom = feat.geometry()
-                            attrs.append(geom.asWkt() if (geom and not geom.isNull()) else "")
+                            wkt_val = geom.asWkt() if (geom and not geom.isNull()) else ""
+                            attrs.append(format_wkt_point(wkt_val))
                         else:
                             src_name = find_source_field(temp_merged.fields(), col)
                             if src_name:
-                                attrs.append(feat[src_name])
+                                raw_val = feat[src_name]
+                                if col == "Selected_SSU":
+                                    attrs.append(standardize_selected_ssu(raw_val))
+                                elif col in ("N_UCODE", "Update Codes", "Update_Codes"):
+                                    attrs.append(standardize_update_code(raw_val))
+                                else:
+                                    attrs.append(raw_val)
                             else:
                                 attrs.append(None)
                     new_feat.setAttributes(attrs)
@@ -512,7 +606,12 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                         for col in TARGET_COLUMNS:
                             if col == "WKT":
                                 geom = feat.geometry()
-                                row["WKT"] = geom.asWkt() if (geom and not geom.isNull()) else ""
+                                if geom and not geom.isNull():
+                                    wkt_val = geom.asWkt()
+                                else:
+                                    src_wkt = find_source_field(merged_layer.fields(), "WKT")
+                                    wkt_val = feat[src_wkt] if src_wkt else ""
+                                row["WKT"] = format_wkt_point(wkt_val)
                                 continue
 
                             src_name = find_source_field(merged_layer.fields(), col)
@@ -522,6 +621,10 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                                 val = ""
                             elif 'ID' in col.upper():
                                 val = str(val)
+                            elif col == "Selected_SSU":
+                                val = standardize_selected_ssu(val)
+                            elif col in ("N_UCODE", "Update Codes", "Update_Codes"):
+                                val = standardize_update_code(val)
                             row[col] = val
 
                         data.append(row)
