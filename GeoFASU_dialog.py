@@ -237,25 +237,25 @@ class GeoFASUDialog(QDialog, FORM_CLASS):
                                 attrs.append(str(val).strip())
                         elif norm_col in ("selectedssu", "selected_ssu"):
                             raw_str = "" if pd.isna(val) else str(val).strip()
-                            # Standardize Selected_SSU to PSA standard labels
+                            # Standardize Selected_SSU to numeric code only ('1', '2', '3')
                             if (
                                 raw_str == "1"
-                                or raw_str.startswith("1")
+                                or (raw_str.startswith("1") and (len(raw_str) == 1 or not raw_str[1].isdigit()))
                                 or ("sample" in raw_str.lower() and "replacement" not in raw_str.lower() and "additional" not in raw_str.lower())
                             ):
-                                attrs.append("1 - Sample SSU")
+                                attrs.append("1")
                             elif (
                                 raw_str == "2"
-                                or raw_str.startswith("2")
+                                or (raw_str.startswith("2") and (len(raw_str) == 1 or not raw_str[1].isdigit()))
                                 or ("replacement" in raw_str.lower() and "additional" not in raw_str.lower())
                             ):
-                                attrs.append("2 - Replacement SSU")
+                                attrs.append("2")
                             elif (
                                 raw_str == "3"
-                                or raw_str.startswith("3")
+                                or (raw_str.startswith("3") and (len(raw_str) == 1 or not raw_str[1].isdigit()))
                                 or ("additional" in raw_str.lower())
                             ):
-                                attrs.append("3 - Additional Replacement SSU")
+                                attrs.append("3")
                             else:
                                 attrs.append(raw_str)
                         elif norm_col in ("updatecodes", "updatecode", "updatescodes", "uc"):

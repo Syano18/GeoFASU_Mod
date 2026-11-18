@@ -113,35 +113,38 @@ def is_selected_ssu_1(val):
     return False
 
 
-def standardize_selected_ssu(val):
+def standardize_selected_ssu(val, is_int=None):
     """
-    Standardizes Selected_SSU values to PSA GeoFASU standard format:
-    '1 - Sample SSU', '2 - Replacement SSU', '3 - Additional Replacement SSU'.
+    Standardizes Selected_SSU values to numeric code format:
+    1 (Sample SSU), 2 (Replacement SSU), 3 (Additional Replacement SSU).
+    Returns integer or string representation depending on is_int (or infers from input type if None).
     """
     if is_null_or_empty(val):
         return val
     s = str(val).strip()
     v_int = to_int_or_none(s)
     s_lower = s.lower()
+    if is_int is None:
+        is_int = isinstance(val, int) and not isinstance(val, bool)
     if (
         v_int == 1
-        or s.startswith("1")
+        or (s.startswith("1") and (len(s) == 1 or not s[1].isdigit()))
         or ("sample" in s_lower and "replacement" not in s_lower and "additional" not in s_lower)
     ):
-        return "1 - Sample SSU"
+        return 1 if is_int else "1"
     elif (
         v_int == 2
-        or s.startswith("2")
+        or (s.startswith("2") and (len(s) == 1 or not s[1].isdigit()))
         or ("replacement" in s_lower and "additional" not in s_lower)
     ):
-        return "2 - Replacement SSU"
+        return 2 if is_int else "2"
     elif (
         v_int == 3
-        or s.startswith("3")
+        or (s.startswith("3") and (len(s) == 1 or not s[1].isdigit()))
         or ("additional" in s_lower)
     ):
-        return "3 - Additional Replacement SSU"
-    return s
+        return 3 if is_int else "3"
+    return v_int if is_int and v_int is not None else s
 
 
 def standardize_update_code(val, is_int=False):
@@ -435,6 +438,8 @@ class CheckerDialog(QDialog, FORM_CLASS):
             )
 
             f_sel_idx = sample_layer.fields().indexOf(f_sel) if f_sel else -1
+            sel_field = sample_layer.fields().field(f_sel_idx) if f_sel_idx >= 0 else None
+            is_int_sel = sel_field.isNumeric() if sel_field else False
             f_uc_idx = sample_layer.fields().indexOf(f_uc)
             uc_field = sample_layer.fields().field(f_uc_idx)
             is_int_field = uc_field.isNumeric()
@@ -455,7 +460,7 @@ class CheckerDialog(QDialog, FORM_CLASS):
 
                 # 1. Inspect and standardize Selected_SSU
                 raw_sel = feat[f_sel] if f_sel else None
-                std_sel = standardize_selected_ssu(raw_sel)
+                std_sel = standardize_selected_ssu(raw_sel, is_int=is_int_sel)
                 if f_sel and not is_null_or_empty(raw_sel) and str(raw_sel).strip() != str(std_sel):
                     feat_updates[f_sel_idx] = std_sel
                     std_sel_logs.append(

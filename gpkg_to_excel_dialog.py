@@ -9,7 +9,14 @@ from collections import defaultdict
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import QgsVectorLayer, QgsProviderRegistry, QgsField
+from qgis.core import (
+    QgsVectorLayer,
+    QgsProviderRegistry,
+    QgsField,
+    QgsFeature,
+    QgsFields,
+    QgsWkbTypes,
+)
 import processing
 
 try:
@@ -20,6 +27,74 @@ except (ImportError, ValueError):
 FORM_CLASS, _ = uic.loadUiType(
     os.path.join(os.path.dirname(__file__), "gpkg_to_excel_dialog.ui")
 )
+
+TARGET_COLUMNS = [
+    "GEOID",
+    "Round",
+    "Year",
+    "RG",
+    "REG",
+    "PRV",
+    "MUN",
+    "BGY",
+    "EA",
+    "Replicate_Number",
+    "PSU_Number",
+    "BSN",
+    "HUSN",
+    "HSN",
+    "PSU_Name",
+    "HH_Head",
+    "Address",
+    "HH_Members",
+    "WKT",
+    "Remarks",
+    "Selected_SSU",
+    "N_HHEAD",
+    "N_ADDRESS",
+    "N_REMARKS",
+    "N_HUSN",
+    "N_HSN",
+]
+
+
+def find_source_field(fields, target_col):
+    """Finds matching source field name in fields for target_col, supporting case-insensitivity and known aliases."""
+    aliases = {
+        "N_HHEAD": ["n_hhead", "n_hhhead", "n_head", "n_household_head"],
+        "N_ADDRESS": ["n_address", "n_addr"],
+        "N_REMARKS": ["n_remarks", "n_rem"],
+        "N_HUSN": ["n_husn"],
+        "N_HSN": ["n_hsn"],
+        "PSU_Number": ["psu_number", "psu_no"],
+        "Replicate_Number": ["replicate_number", "replicate_no", "replicate"],
+        "HH_Members": ["hh_members", "hhmembers", "members"],
+        "HH_Head": ["hh_head", "household_head", "head", "hh_head_name"],
+        "Selected_SSU": ["selected_ssu", "selected ssu", "selectedssu"],
+        "Remarks": ["remarks", "rem"],
+        "Address": ["address", "addr"],
+    }
+    candidate_list = aliases.get(target_col, [])
+
+    # 1. Exact match
+    for f in fields:
+        if f.name() == target_col:
+            return f.name()
+    # 2. Case-insensitive match
+    for f in fields:
+        if f.name().lower() == target_col.lower():
+            return f.name()
+    # 3. Known aliases
+    for cand in candidate_list:
+        for f in fields:
+            if f.name().lower() == cand.lower():
+                return f.name()
+    # 4. Normalized match (ignoring underscores/spaces)
+    norm_target = re.sub(r"[\s_]+", "", target_col).lower()
+    for f in fields:
+        if re.sub(r"[\s_]+", "", f.name()).lower() == norm_target:
+            return f.name()
+    return None
 
 class GpkgToExcelDialog(QDialog, FORM_CLASS):
     def __init__(self, parent=None):
@@ -265,46 +340,61 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                 }
                 temp_merged = processing.run("native:mergevectorlayers", params)['OUTPUT']
 
-                # Ensure 'WKT' column exists and populate it with the current point coordinates
-                wkt_idx = temp_merged.fields().indexOf("WKT")
-                if wkt_idx == -1:
-                    try:
-                        from qgis.PyQt.QtCore import QMetaType
-                        wkt_field = QgsField("WKT", QMetaType.Type.QString)
-                    except Exception:
-                        from qgis.PyQt.QtCore import QVariant
-                        wkt_field = QgsField("WKT", QVariant.String)
-                    temp_merged.dataProvider().addAttributes([wkt_field])
-                    temp_merged.updateFields()
-                    wkt_idx = temp_merged.fields().indexOf("WKT")
+                # Rearrange, rename, and filter columns strictly to TARGET_COLUMNS
+                wkb_str = QgsWkbTypes.displayString(temp_merged.wkbType())
+                mem_uri = f"{wkb_str}?crs={temp_merged.crs().authid()}"
+                clean_layer = QgsVectorLayer(mem_uri, f"{nos}_{mun}_clean", "memory")
 
-                if wkt_idx != -1:
-                    wkt_updates = {}
-                    for feat in temp_merged.getFeatures():
-                        geom = feat.geometry()
-                        wkt_val = geom.asWkt() if (geom and not geom.isNull()) else ""
-                        wkt_updates[feat.id()] = {wkt_idx: wkt_val}
-                    if wkt_updates:
-                        temp_merged.dataProvider().changeAttributeValues(wkt_updates)
+                try:
+                    from qgis.PyQt.QtCore import QMetaType
+                    string_field_type = QMetaType.Type.QString
+                except Exception:
+                    from qgis.PyQt.QtCore import QVariant
+                    string_field_type = QVariant.String
+
+                clean_fields = QgsFields()
+                for col in TARGET_COLUMNS:
+                    src_name = find_source_field(temp_merged.fields(), col)
+                    if src_name:
+                        src_f = temp_merged.fields().field(src_name)
+                        clean_fields.append(QgsField(col, src_f.type(), src_f.typeName()))
+                    else:
+                        clean_fields.append(QgsField(col, string_field_type))
+
+                clean_layer.dataProvider().addAttributes(clean_fields)
+                clean_layer.updateFields()
+
+                features_to_add = []
+                for feat in temp_merged.getFeatures():
+                    new_feat = QgsFeature(clean_layer.fields())
+                    if feat.hasGeometry():
+                        new_feat.setGeometry(feat.geometry())
+                    attrs = []
+                    for col in TARGET_COLUMNS:
+                        if col == "WKT":
+                            geom = feat.geometry()
+                            attrs.append(geom.asWkt() if (geom and not geom.isNull()) else "")
+                        else:
+                            src_name = find_source_field(temp_merged.fields(), col)
+                            if src_name:
+                                attrs.append(feat[src_name])
+                            else:
+                                attrs.append(None)
+                    new_feat.setAttributes(attrs)
+                    features_to_add.append(new_feat)
+
+                clean_layer.dataProvider().addFeatures(features_to_add)
+                clean_layer.updateExtents()
 
                 self.progressBar.setValue(base_prog + int(50 / total_reps))
                 QCoreApplication.processEvents()
 
-                # Delete 'layer', 'path', and 'fid' columns if present to avoid fid UNIQUE constraint violations
-                cols_to_del = [c for c in ['layer', 'path', 'fid'] if temp_merged.fields().indexOf(c) != -1]
-                if cols_to_del:
-                    params_del = {
-                        'INPUT': temp_merged,
-                        'COLUMN': cols_to_del,
-                        'OUTPUT': merged_gpkg_path
-                    }
-                    processing.run("native:deletecolumn", params_del)
-                else:
-                    params_save = {
-                        'INPUT': temp_merged,
-                        'OUTPUT': merged_gpkg_path
-                    }
-                    processing.run("native:savefeatures", params_save)
+                # Save rearranged features to merged GPKG
+                params_save = {
+                    'INPUT': clean_layer,
+                    'OUTPUT': merged_gpkg_path
+                }
+                processing.run("native:savefeatures", params_save)
                 
                 current_rep += 1
                 self.progressBar.setValue(int((current_rep / total_reps) * 100))
@@ -414,25 +504,26 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
                         break
 
                 if merged_layer and merged_layer.isValid():
-                    field_names = [field.name() for field in merged_layer.fields() if field.name().lower() not in ['layer', 'path']]
                     data = []
                     features = merged_layer.getFeatures()
 
                     for feat in features:
                         row = {}
-                        for name in field_names:
-                            val = feat[name]
+                        for col in TARGET_COLUMNS:
+                            if col == "WKT":
+                                geom = feat.geometry()
+                                row["WKT"] = geom.asWkt() if (geom and not geom.isNull()) else ""
+                                continue
+
+                            src_name = find_source_field(merged_layer.fields(), col)
+                            val = feat[src_name] if src_name else None
+
                             if val is None or (hasattr(val, 'isNull') and val.isNull()) or type(val).__name__ == 'QPyNullVariant' or str(val) == 'NULL':
                                 val = ""
-                            elif 'ID' in name.upper():
+                            elif 'ID' in col.upper():
                                 val = str(val)
-                            row[name] = val
+                            row[col] = val
 
-                        geom = feat.geometry()
-                        if geom and not geom.isNull():
-                            row['WKT'] = geom.asWkt()
-                        else:
-                            row['WKT'] = ""
                         data.append(row)
 
                     if data:
@@ -444,17 +535,12 @@ class GpkgToExcelDialog(QDialog, FORM_CLASS):
 
             if df_list:
                 final_df = pd.concat(df_list, ignore_index=True)
+                final_df = final_df.reindex(columns=TARGET_COLUMNS, fill_value="")
                 final_df = final_df.fillna("")
-
-                # Renumber fid sequentially if present so rows have unique IDs
-                for fid_col in ['fid', 'FID']:
-                    if fid_col in final_df.columns:
-                        final_df[fid_col] = range(1, len(final_df) + 1)
-
                 final_df.to_excel(excel_path, index=False)
                 total_records = len(final_df)
             else:
-                final_df = pd.DataFrame()
+                final_df = pd.DataFrame(columns=TARGET_COLUMNS)
                 final_df.to_excel(excel_path, index=False)
                 total_records = 0
 
